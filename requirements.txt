@@ -1,2 +1,7 @@
-faster-whisper
 customtkinter
+torch
+torchaudio
+nemo_toolkit[asr]
+soundfile
+ffmpeg-python
+qwen-asr
