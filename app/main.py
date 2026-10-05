@@ -16,6 +16,18 @@ VIDEO_AUDIO_TYPES = [('Video and audio files', '*.mp4 *.mkv *.mov *.avi *.webm *
 SRT_TYPES = [('SubRip subtitles', '*.srt'), ('All files', '*.*')]
 LANGUAGES = {'Ukrainian': 'uk', 'English': 'en', 'Russian': 'ru', 'Polish': 'pl', 'German': 'de', 'Spanish': 'es', 'French': 'fr'}
 
+GEMINI_MODELS = [
+    'gemini-3.8-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+]
+OPENAI_MODELS = ['gpt-6-luna']
+
 class SubwayApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -80,9 +92,14 @@ class SubwayApp(ctk.CTk):
         self.language_menu.set('Ukrainian')
         self.language_menu.grid(row=2, column=1, padx=8, pady=5, sticky='w')
         ctk.CTkLabel(translation_frame, text='Model').grid(row=3, column=0, padx=(15, 8), pady=5, sticky='w')
-        self.translation_model = ctk.CTkEntry(translation_frame, width=260)
+        self.translation_model = ctk.CTkOptionMenu(
+            translation_frame,
+            values=GEMINI_MODELS,
+            width=260,
+            command=self._translation_model_changed,
+        )
         self.translation_model.grid(row=3, column=1, padx=8, pady=5, sticky='ew')
-        self.translation_model.insert(0, 'gemini-3.8-flash')
+        self.translation_model.set(GEMINI_MODELS[0])
         ctk.CTkLabel(translation_frame, text='API key').grid(row=4, column=0, padx=(15, 8), pady=5, sticky='w')
         self.api_key = ctk.CTkEntry(translation_frame, show='•')
         self.api_key.grid(row=4, column=1, columnspan=2, padx=8, pady=5, sticky='ew')
@@ -112,9 +129,12 @@ class SubwayApp(ctk.CTk):
         self._refresh_model_status()
 
     def _provider_changed(self, provider: str):
-        default_model = 'gemini-3.8-flash' if provider == 'Gemini' else 'gpt-6-luna'
-        self.translation_model.delete(0, 'end')
-        self.translation_model.insert(0, default_model)
+        models = GEMINI_MODELS if provider == 'Gemini' else OPENAI_MODELS
+        self.translation_model.configure(values=models)
+        self.translation_model.set(models[0])
+
+    def _translation_model_changed(self, model: str):
+        self.log(f'Translation model: {model}')
 
     def _refresh_model_status(self):
         model = self.selected_model
@@ -241,7 +261,7 @@ class SubwayApp(ctk.CTk):
             messagebox.showwarning(APP_NAME, 'Enter an API key first.')
             return
         provider = self.provider_menu.get()
-        model = self.translation_model.get().strip()
+        model = self.translation_model.get()
         language = self.language_menu.get()
         self.translate_button.configure(state='disabled')
         self.select_srt_button.configure(state='disabled')
