@@ -1,3 +1,5 @@
+import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -26,91 +28,72 @@ class TranscriptionEngine:
 
 
 class ParakeetEngine(TranscriptionEngine):
+    """Parakeet through NVIDIA's native NeMo-Speech.cpp runtime."""
+
     name = "Parakeet TDT v3"
-    model_name = "nvidia/parakeet-tdt-0.6b-v3"
+    model_name = "parakeet-tdt-0.6b-v3.q8_0.gguf"
 
-    def __init__(self):
-        self._model = None
+    def __init__(self, runtime_dir: Path | None = None):
+        self.runtime_dir = runtime_dir or Path(__file__).resolve().parents[2] / "runtime"
 
-    def _load(self):
-        if self._model is not None:
-            return
-        try:
-            from nemo.collections.asr.models import ASRModel
-        except ImportError as exc:
-            raise RuntimeError("NeMo ASR is not installed.") from exc
-        self._model = ASRModel.from_pretrained(model_name=self.model_name)
-        self._model.eval()
+    def _binary(self) -> Path:
+        name = "nemo-speech.exe" if __import__("sys").platform == "win32" else "nemo-speech"
+        path = self.runtime_dir / name
+        if not path.exists():
+            raise RuntimeError(f"NeMo-Speech runtime not found: {path}")
+        return path
 
-    def transcribe(self, media_path: Path) -> Iterator[TranscriptSegment]:
-        self._load()
-        outputs = self._model.transcribe([str(media_path)], timestamps=True)
-        for output in outputs:
-            yield self._normalize_output(output)
+    def _model(self) -> Path:
+        path = self.runtime_dir / "models" / self.model_name
+        if not path.exists():
+            raise RuntimeError(f"Parakeet model not found: {path}")
+        return path
 
-    @staticmethod
-    def _normalize_output(output) -> TranscriptSegment:
-        text = str(getattr(output, "text", "") or "").strip()
-        timestamp_data = getattr(output, "timestamp", None) or {}
-        raw_words = timestamp_data.get("word", []) if isinstance(timestamp_data, dict) else []
+    def _ffmpeg(self) -> Path:
+        name = "ffmpeg.exe" if __import__("sys").platform == "win32" else "ffmpeg"
+        path = self.runtime_dir / name
+        if not path.exists():
+            raise RuntimeError(f"FFmpeg not found: {path}")
+        return path
 
-        words: list[TranscriptWord] = []
-        for item in raw_words:
-            if not isinstance(item, dict):
-                continue
-            word = str(item.get("word", "")).strip()
-            start = item.get("start")
-            end = item.get("end")
-            if word and start is not None and end is not None:
-                words.append(TranscriptWord(word, float(start), float(end)))
-
-        if words:
-            start = words[0].start
-            end = words[-1].end
-        else:
-            start = 0.0
-            end = 0.0
-
-        return TranscriptSegment(text=text, start=start, end=end, words=words)
-
-
-class QwenASREngine(TranscriptionEngine):
-    name = "Qwen3-ASR 1.7B"
-    model_name = "Qwen/Qwen3-ASR-1.7B"
-
-    def __init__(self):
-        self._model = None
-
-    def _load(self):
-        if self._model is not None:
-            return
-        try:
-            from qwen_asr import Qwen3ASRModel
-        except ImportError as exc:
-            raise RuntimeError("qwen-asr is not installed.") from exc
-        self._model = Qwen3ASRModel.from_pretrained(
-            self.model_name,
-            device_map="cuda:0",
-            forced_aligner="Qwen/Qwen3-ForcedAligner-0.6B",
-            forced_aligner_kwargs={"device_map": "cuda:0"},
-        )
+    def _to_wav(self, media_path: Path) -> Path:
+        wav_path = media_path.with_suffix(".subway.wav")
+        command = [
+            str(self._ffmpeg()), "-y", "-i", str(media_path),
+            "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(wav_path),
+        ]
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg conversion failed:\n{result.stderr[-2000:]}")
+        return wav_path
 
     def transcribe(self, media_path: Path) -> Iterator[TranscriptSegment]:
-        self._load()
-        results = self._model.transcribe(
-            audio=str(media_path),
-            language=None,
-            return_time_stamps=True,
-        )
-        for result in results:
+        wav_path = self._to_wav(media_path)
+        command = [
+            str(self._binary()), "transcribe", str(wav_path),
+            "--model", str(self._model()), "--format", "json",
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
+        try:
+            wav_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        if result.returncode != 0:
+            raise RuntimeError(f"Parakeet transcription failed:\n{result.stderr[-3000:]}")
+
+        payload = json.loads(result.stdout)
+        for item in payload.get("segments", []) if isinstance(payload, dict) else []:
             words = [
-                TranscriptWord(str(item[0]), float(item[1]), float(item[2]))
-                for item in (getattr(result, "time_stamps", []) or [])
-                if len(item) >= 3
+                TranscriptWord(
+                    str(word.get("text", word.get("word", ""))).strip(),
+                    float(word.get("start", 0)),
+                    float(word.get("end", 0)),
+                )
+                for word in item.get("words", [])
+                if word.get("text", word.get("word", "")).strip()
             ]
-            yield TranscriptSegment(
-                text=str(getattr(result, "text", "")).strip(),
-                start=words[0].start if words else 0.0,
-                end=words[-1].end if words else 0.0,
-                words=words,
-            )
+            start = float(item.get("start", words[0].start if words else 0))
+            end = float(item.get("end", words[-1].end if words else 0))
+            text = str(item.get("text", "")).strip()
+            if text and end > start:
+                yield TranscriptSegment(text, start, end, words)
