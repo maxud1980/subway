@@ -1,7 +1,4 @@
 customtkinter
-torch
-torchaudio
-nemo_toolkit[asr]
-soundfile
-ffmpeg-python
-qwen-asr
+
+# Runtime ASR dependencies are installed by the Windows release workflow.
+# Keeping them out of the base test environment makes CI fast and reliable.
