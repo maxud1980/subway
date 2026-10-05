@@ -31,7 +31,7 @@ class Translator:
         prompt = (
             'Translate subtitle lines into {target}. Preserve meaning, tone, names, numbers and profanity. '
             'Do not explain or summarize. Keep each subtitle item separate. '
-            'Return ONLY valid JSON in exactly this form: {"items":[{"id":0,"text":"translated text"}]}. '
+            'Return ONLY valid JSON in exactly this form: {{"items":[{{"id":0,"text":"translated text"}}]}}. '
             'Keep every input id exactly once and do not add or remove items. Input JSON:\n{payload}'
         ).format(target=self.config.target_language, payload=json.dumps(payload, ensure_ascii=False))
         if self.config.provider == 'Gemini':
