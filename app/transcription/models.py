@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,9 +29,16 @@ MODELS = [
 ]
 
 
+def default_runtime_dir() -> Path:
+    """Return the writable runtime directory beside the EXE on Windows."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "runtime"
+    return Path(__file__).resolve().parents[2] / "runtime"
+
+
 class ModelManager:
     def __init__(self, runtime_dir: Path | None = None):
-        self.runtime_dir = runtime_dir or Path(__file__).resolve().parents[2] / "runtime"
+        self.runtime_dir = runtime_dir or default_runtime_dir()
         self.models_dir = self.runtime_dir / "models"
 
     def available_models(self) -> list[ModelInfo]:
