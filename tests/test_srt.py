@@ -8,4 +8,4 @@ def test_segment_formatting(tmp_path):
     subtitles = segments_to_subtitles(segments)
     output = tmp_path / "test.srt"
     write_srt(subtitles, output)
-    assert output.read_text(encoding="utf-8") == "1\\n00:00:01,200 --> 00:00:03,400\\nHello world\\n"
+    assert output.read_text(encoding="utf-8") == "1\n00:00:01,200 --> 00:00:03,400\nHello world\n"
