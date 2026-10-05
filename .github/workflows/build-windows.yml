@@ -19,25 +19,52 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install build dependencies
+      - name: Install GUI build dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install pyinstaller
 
-      - name: Build Subway
+      - name: Build Subway GUI
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed --name Subway subway.py
 
-      - name: Upload Windows build
+      - name: Install FFmpeg
+        shell: powershell
+        run: choco install ffmpeg -y --no-progress
+
+      - name: Download native NeMo-Speech runtime
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path package\runtime | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.1.0/nemo-speech-0.1.0-windows-x86_64-cuda.zip" -OutFile nemo.zip
+          Expand-Archive nemo.zip -DestinationPath package\runtime -Force
+          $root = Get-ChildItem package\runtime -Directory | Select-Object -First 1
+          Rename-Item $root.FullName package\runtime\nemo-speech
+
+      - name: Download Parakeet model
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path package\runtime\models | Out-Null
+          Invoke-WebRequest -Uri "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3/resolve/main/parakeet-tdt-0.6b-v3.q8_0.gguf" -OutFile package\runtime\models\parakeet-tdt-0.6b-v3.q8_0.gguf
+
+      - name: Assemble distribution
+        shell: powershell
+        run: |
+          Copy-Item dist\Subway.exe package\Subway.exe
+          $ffmpeg = (Get-Command ffmpeg).Source
+          Copy-Item $ffmpeg package\runtime\ffmpeg.exe
+          Compress-Archive -Path package\* -DestinationPath Subway-Windows.zip -Force
+
+      - name: Upload Windows distribution
         uses: actions/upload-artifact@v4
         with:
           name: Subway-Windows
-          path: dist/Subway.exe
+          path: Subway-Windows.zip
           if-no-files-found: error
 
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Subway.exe
+          files: Subway-Windows.zip
