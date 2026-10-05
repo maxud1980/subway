@@ -38,7 +38,7 @@ class ParakeetEngine(TranscriptionEngine):
 
     def _binary(self) -> Path:
         name = "nemo-speech.exe" if __import__("sys").platform == "win32" else "nemo-speech"
-        path = self.runtime_dir / name
+        path = self.runtime_dir / "nemo-speech" / "bin" / name
         if not path.exists():
             raise RuntimeError(f"NeMo-Speech runtime not found: {path}")
         return path
