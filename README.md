@@ -24,7 +24,7 @@ Optional translation is a separate step:
 
 SRT text → user-selected Gemini or OpenAI API → translated SRT
 
-Only subtitle text is sent to the translation API. The original media is never uploaded.
+The GUI supports Gemini and OpenAI, target-language selection, batching, and preservation of the original subtitle timings. Only subtitle text is sent to the translation API. The original media is never uploaded. OpenAI requests explicitly use `store: false`.
 
 ## Windows distribution
 
@@ -40,7 +40,7 @@ The build can be triggered manually or by pushing a version tag such as v0.1.0. 
 
 ## Current status
 
-Early development. The local recognition pipeline and automated Windows packaging are being prepared for the first real RTX 3060 Ti test.
+Early development. Local Parakeet recognition is working in the Windows build. The next layer adds optional SRT translation through Gemini or OpenAI while keeping the media and recognition pipeline local.
 
 ## Privacy
 
