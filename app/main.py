@@ -16,17 +16,7 @@ VIDEO_AUDIO_TYPES = [('Video and audio files', '*.mp4 *.mkv *.mov *.avi *.webm *
 SRT_TYPES = [('SubRip subtitles', '*.srt'), ('All files', '*.*')]
 LANGUAGES = {'Ukrainian': 'uk', 'English': 'en', 'Russian': 'ru', 'Polish': 'pl', 'German': 'de', 'Spanish': 'es', 'French': 'fr'}
 
-GEMINI_MODELS = [
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-3.1-flash-lite',
-    'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
-]
-OPENAI_MODELS = ['gpt-6-luna']
+GEMINI_MODELS = ['gemini-3.8-flash']
 
 class SubwayApp(ctk.CTk):
     def __init__(self):
@@ -85,7 +75,7 @@ class SubwayApp(ctk.CTk):
         translation_frame.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(translation_frame, text='2. Optional translation', font=ctk.CTkFont(size=14, weight='bold')).grid(row=0, column=0, columnspan=3, padx=15, pady=(12, 8), sticky='w')
         ctk.CTkLabel(translation_frame, text='Provider').grid(row=1, column=0, padx=(15, 8), pady=5, sticky='w')
-        self.provider_menu = ctk.CTkOptionMenu(translation_frame, values=['Gemini', 'OpenAI'], command=self._provider_changed, width=130)
+        self.provider_menu = ctk.CTkOptionMenu(translation_frame, values=['Gemini'], command=self._provider_changed, width=130)
         self.provider_menu.grid(row=1, column=1, padx=8, pady=5, sticky='w')
         ctk.CTkLabel(translation_frame, text='Target language').grid(row=2, column=0, padx=(15, 8), pady=5, sticky='w')
         self.language_menu = ctk.CTkOptionMenu(translation_frame, values=list(LANGUAGES), width=180)
@@ -129,7 +119,7 @@ class SubwayApp(ctk.CTk):
         self._refresh_model_status()
 
     def _provider_changed(self, provider: str):
-        models = GEMINI_MODELS if provider == 'Gemini' else OPENAI_MODELS
+        models = GEMINI_MODELS
         self.translation_model.configure(values=models)
         self.translation_model.set(models[0])
 
