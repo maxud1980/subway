@@ -3,8 +3,8 @@ name: Build Windows
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 jobs:
   build:
@@ -51,15 +51,10 @@ jobs:
           Remove-Item package\nemo-extract -Recurse -Force
           Remove-Item nemo.zip -Force
 
-      - name: Download Parakeet model
-        shell: powershell
-        run: |
-          New-Item -ItemType Directory -Force -Path package\runtime\models | Out-Null
-          Invoke-WebRequest -Uri "https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3/resolve/main/parakeet-tdt-0.6b-v3.q8_0.gguf" -OutFile package\runtime\models\parakeet-tdt-0.6b-v3.q8_0.gguf
-
       - name: Assemble distribution
         shell: powershell
         run: |
+          New-Item -ItemType Directory -Force -Path package\runtime\models | Out-Null
           Copy-Item dist\Subway.exe package\Subway.exe
           $ffmpeg = (Get-Command ffmpeg).Source
           Copy-Item $ffmpeg package\runtime\ffmpeg.exe
