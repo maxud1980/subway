@@ -40,6 +40,7 @@ class ParakeetEngine(TranscriptionEngine):
         except ImportError as exc:
             raise RuntimeError("NeMo ASR is not installed.") from exc
         self._model = ASRModel.from_pretrained(model_name=self.model_name)
+        self._model.eval()
 
     def transcribe(self, media_path: Path) -> Iterator[TranscriptSegment]:
         self._load()
@@ -49,12 +50,28 @@ class ParakeetEngine(TranscriptionEngine):
 
     @staticmethod
     def _normalize_output(output) -> TranscriptSegment:
-        return TranscriptSegment(
-            text=str(getattr(output, "text", "")).strip(),
-            start=0.0,
-            end=0.0,
-            words=[],
-        )
+        text = str(getattr(output, "text", "") or "").strip()
+        timestamp_data = getattr(output, "timestamp", None) or {}
+        raw_words = timestamp_data.get("word", []) if isinstance(timestamp_data, dict) else []
+
+        words: list[TranscriptWord] = []
+        for item in raw_words:
+            if not isinstance(item, dict):
+                continue
+            word = str(item.get("word", "")).strip()
+            start = item.get("start")
+            end = item.get("end")
+            if word and start is not None and end is not None:
+                words.append(TranscriptWord(word, float(start), float(end)))
+
+        if words:
+            start = words[0].start
+            end = words[-1].end
+        else:
+            start = 0.0
+            end = 0.0
+
+        return TranscriptSegment(text=text, start=start, end=end, words=words)
 
 
 class QwenASREngine(TranscriptionEngine):
