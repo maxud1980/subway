@@ -37,10 +37,19 @@ jobs:
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path package\runtime | Out-Null
+          New-Item -ItemType Directory -Force -Path package\nemo-extract | Out-Null
           Invoke-WebRequest -Uri "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.1.0/nemo-speech-0.1.0-windows-x86_64-cuda.zip" -OutFile nemo.zip
-          Expand-Archive nemo.zip -DestinationPath package\runtime -Force
-          $root = Get-ChildItem package\runtime -Directory | Select-Object -First 1
-          Rename-Item $root.FullName package\runtime\nemo-speech
+          Expand-Archive nemo.zip -DestinationPath package\nemo-extract -Force
+          $exe = Get-ChildItem package\nemo-extract -Recurse -Filter nemo-speech.exe | Select-Object -First 1
+          if (-not $exe) { throw "nemo-speech.exe not found in the NeMo-Speech archive" }
+          $sourceRoot = $exe.Directory.Parent
+          New-Item -ItemType Directory -Force -Path package\runtime\nemo-speech | Out-Null
+          Copy-Item "$($sourceRoot.FullName)\*" package\runtime\nemo-speech -Recurse -Force
+          if (-not (Test-Path package\runtime\nemo-speech\bin\nemo-speech.exe)) {
+            throw "Unexpected NeMo-Speech archive layout"
+          }
+          Remove-Item package\nemo-extract -Recurse -Force
+          Remove-Item nemo.zip -Force
 
       - name: Download Parakeet model
         shell: powershell
