@@ -58,8 +58,29 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path package\runtime\models | Out-Null
           Copy-Item dist\Subway.exe package\Subway.exe
-          $ffmpeg = (Get-Command ffmpeg).Source
-          Copy-Item $ffmpeg package\runtime\ffmpeg.exe
+
+          # Chocolatey exposes ffmpeg through a shim in its bin directory.
+          # Copy the real executable from the installed package, not the shim.
+          $ffmpegCandidates = @(
+            (Get-ChildItem "C:\ProgramData\chocolatey\lib" -Recurse -Filter ffmpeg.exe -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match "\\tools\\ffmpeg\\bin\\ffmpeg\.exe$" } |
+              Select-Object -First 1),
+            (Get-ChildItem "C:\ProgramData\chocolatey\lib" -Recurse -Filter ffmpeg.exe -File -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -notmatch "\\bin\\ffmpeg\.exe$" -and $_.Length -gt 1000000 } |
+              Select-Object -First 1)
+          )
+          $ffmpeg = $ffmpegCandidates | Where-Object { $_ } | Select-Object -First 1
+          if (-not $ffmpeg) { throw "Real FFmpeg executable not found in Chocolatey installation" }
+          Write-Host "Packaging FFmpeg from $($ffmpeg.FullName)"
+          Copy-Item $ffmpeg.FullName package\runtime\ffmpeg.exe
+
+          if (-not (Test-Path package\runtime\ffmpeg.exe)) {
+            throw "FFmpeg was not copied into the package"
+          }
+          if ((Get-Item package\runtime\ffmpeg.exe).Length -lt 1000000) {
+            throw "Packaged ffmpeg.exe looks like a Chocolatey shim, not the real binary"
+          }
+
           Compress-Archive -Path package\* -DestinationPath Subway-Windows.zip -Force
 
       - name: Upload Windows distribution
