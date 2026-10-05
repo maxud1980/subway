@@ -35,7 +35,12 @@ class ParakeetEngine(TranscriptionEngine):
     model_name = "parakeet-tdt-0.6b-v3.q8_0.gguf"
 
     def __init__(self, runtime_dir: Path | None = None, model_name: str | None = None):
-        self.runtime_dir = runtime_dir or Path(__file__).resolve().parents[2] / "runtime"
+        if runtime_dir is None:
+            if getattr(sys, "frozen", False):
+                runtime_dir = Path(sys.executable).resolve().parent / "runtime"
+            else:
+                runtime_dir = Path(__file__).resolve().parents[2] / "runtime"
+        self.runtime_dir = runtime_dir
         if model_name:
             self.model_name = model_name
 
