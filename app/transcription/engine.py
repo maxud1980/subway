@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -33,11 +34,13 @@ class ParakeetEngine(TranscriptionEngine):
     name = "Parakeet TDT v3"
     model_name = "parakeet-tdt-0.6b-v3.q8_0.gguf"
 
-    def __init__(self, runtime_dir: Path | None = None):
+    def __init__(self, runtime_dir: Path | None = None, model_name: str | None = None):
         self.runtime_dir = runtime_dir or Path(__file__).resolve().parents[2] / "runtime"
+        if model_name:
+            self.model_name = model_name
 
     def _binary(self) -> Path:
-        name = "nemo-speech.exe" if __import__("sys").platform == "win32" else "nemo-speech"
+        name = "nemo-speech.exe" if sys.platform == "win32" else "nemo-speech"
         path = self.runtime_dir / "nemo-speech" / "bin" / name
         if not path.exists():
             raise RuntimeError(f"NeMo-Speech runtime not found: {path}")
@@ -46,11 +49,11 @@ class ParakeetEngine(TranscriptionEngine):
     def _model(self) -> Path:
         path = self.runtime_dir / "models" / self.model_name
         if not path.exists():
-            raise RuntimeError(f"Parakeet model not found: {path}")
+            raise RuntimeError(f"Model not found: {path}")
         return path
 
     def _ffmpeg(self) -> Path:
-        name = "ffmpeg.exe" if __import__("sys").platform == "win32" else "ffmpeg"
+        name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
         path = self.runtime_dir / name
         if not path.exists():
             raise RuntimeError(f"FFmpeg not found: {path}")
