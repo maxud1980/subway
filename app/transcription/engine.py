@@ -1,4 +1,4 @@
-import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -66,8 +66,6 @@ class ParakeetEngine(TranscriptionEngine):
         return path
 
     def _to_wav(self, media_path: Path) -> Path:
-        # Keep temporary audio outside the source directory. This avoids
-        # failures when the source video is in a read-only/protected folder.
         temp_dir = Path(tempfile.gettempdir()) / "Subway"
         temp_dir.mkdir(parents=True, exist_ok=True)
         wav_path = temp_dir / f"{media_path.stem}-{id(media_path)}.wav"
@@ -108,17 +106,63 @@ class ParakeetEngine(TranscriptionEngine):
             raise RuntimeError(f"FFmpeg conversion failed:\n{details[-4000:]}")
 
         if not wav_path.exists() or wav_path.stat().st_size < 44:
-            raise RuntimeError("FFmpeg did not produce an audio file. The selected media may contain no audio track.")
+            raise RuntimeError(
+                "FFmpeg did not produce an audio file. "
+                "The selected media may contain no audio track."
+            )
 
         return wav_path
 
+    @staticmethod
+    def _parse_timestamp(value: str) -> float:
+        match = re.fullmatch(r"(\d+):(\d{2}):(\d{2})[,.](\d{3})", value.strip())
+        if not match:
+            raise ValueError(f"Invalid SRT timestamp: {value}")
+        hours, minutes, seconds, millis = map(int, match.groups())
+        return hours * 3600 + minutes * 60 + seconds + millis / 1000
+
+    @classmethod
+    def _read_srt(cls, path: Path) -> list[TranscriptSegment]:
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+        blocks = re.split(r"\r?\n\s*\r?\n", text.strip())
+        segments: list[TranscriptSegment] = []
+
+        for block in blocks:
+            lines = [line.strip() for line in block.splitlines()]
+            if len(lines) < 3:
+                continue
+
+            timing_index = next(
+                (i for i, line in enumerate(lines) if " --> " in line),
+                None,
+            )
+            if timing_index is None:
+                continue
+
+            start_text, end_text = [part.strip() for part in lines[timing_index].split(" --> ", 1)]
+            start = cls._parse_timestamp(start_text)
+            end = cls._parse_timestamp(end_text)
+            subtitle_text = " ".join(lines[timing_index + 1:]).strip()
+
+            if subtitle_text and end > start:
+                segments.append(TranscriptSegment(subtitle_text, start, end, []))
+
+        return segments
+
     def transcribe(self, media_path: Path) -> Iterator[TranscriptSegment]:
         wav_path = self._to_wav(media_path)
+        output_srt = wav_path.with_suffix(".srt")
+
         try:
             command = [
-                str(self._binary()), "transcribe", str(wav_path),
-                "--model", str(self._model()), "--format", "json",
+                str(self._binary()),
+                "transcribe",
+                str(wav_path),
+                "--model", str(self._model()),
+                "--format", "srt",
+                "--output", str(output_srt),
             ]
+
             result = subprocess.run(
                 command,
                 capture_output=True,
@@ -127,34 +171,32 @@ class ParakeetEngine(TranscriptionEngine):
                 errors="replace",
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
+
             if result.returncode != 0:
-                raise RuntimeError(f"Parakeet transcription failed:\n{result.stderr[-3000:]}")
-
-            try:
-                payload = json.loads(result.stdout)
-            except json.JSONDecodeError as exc:
+                details = (result.stderr or result.stdout).strip()
                 raise RuntimeError(
-                    "Parakeet returned invalid JSON.\n\n"
-                    f"Output:\n{result.stdout[-3000:]}"
-                ) from exc
+                    f"Parakeet transcription failed (exit code {result.returncode}):\n"
+                    f"{details[-4000:]}"
+                )
 
-            for item in payload.get("segments", []) if isinstance(payload, dict) else []:
-                words = [
-                    TranscriptWord(
-                        str(word.get("text", word.get("word", ""))).strip(),
-                        float(word.get("start", 0)),
-                        float(word.get("end", 0)),
-                    )
-                    for word in item.get("words", [])
-                    if word.get("text", word.get("word", "")).strip()
-                ]
-                start = float(item.get("start", words[0].start if words else 0))
-                end = float(item.get("end", words[-1].end if words else 0))
-                text = str(item.get("text", "")).strip()
-                if text and end > start:
-                    yield TranscriptSegment(text, start, end, words)
+            if not output_srt.exists():
+                raise RuntimeError(
+                    "Parakeet completed without producing an SRT file.\n\n"
+                    f"Output:\n{result.stdout[-2000:]}"
+                )
+
+            segments = self._read_srt(output_srt)
+            if not segments:
+                raise RuntimeError(
+                    "Parakeet returned an empty transcript. "
+                    "The model may not have detected speech in the selected file."
+                )
+
+            yield from segments
+
         finally:
-            try:
-                wav_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+            for path in (wav_path, output_srt):
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
