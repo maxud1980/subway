@@ -16,7 +16,7 @@ VIDEO_AUDIO_TYPES = [('Video and audio files', '*.mp4 *.mkv *.mov *.avi *.webm *
 SRT_TYPES = [('SubRip subtitles', '*.srt'), ('All files', '*.*')]
 LANGUAGES = {'Ukrainian': 'uk', 'English': 'en', 'Russian': 'ru', 'Polish': 'pl', 'German': 'de', 'Spanish': 'es', 'French': 'fr'}
 
-GEMINI_MODELS = ['gemini-3.8-flash']
+GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash']
 
 class SubwayApp(ctk.CTk):
     def __init__(self):
