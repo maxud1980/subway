@@ -5,6 +5,7 @@ import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
+from PIL import Image
 
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
@@ -82,9 +83,19 @@ class SubwayApp(ctk.CTk):
         self.grid_rowconfigure(2, weight=1)
 
         header = ctk.CTkFrame(self, fg_color="transparent")
-        header.grid(row=0, column=0, columnspan=2, padx=28, pady=(22, 4), sticky="ew")
-        ctk.CTkLabel(header, text="Subway", font=ctk.CTkFont(size=32, weight="bold")).pack(anchor="w")
-        ctk.CTkLabel(header, text=tr("Local subtitle generator", self.ui_language), font=ctk.CTkFont(size=15), text_color="#9DB4CF").pack(anchor="w")
+        header.grid(row=0, column=0, columnspan=2, padx=28, pady=(20, 4), sticky="ew")
+        header.grid_columnconfigure(1, weight=1)
+        try:
+            logo_image = Image.open(resource_path("assets/subway.ico")).convert("RGBA")
+            self.logo_image = ctk.CTkImage(light_image=logo_image, dark_image=logo_image, size=(68, 68))
+            ctk.CTkLabel(header, text="", image=self.logo_image).grid(row=0, column=0, rowspan=2, padx=(0, 18), sticky="w")
+        except Exception:
+            ctk.CTkLabel(header, text="S", width=64, height=64, corner_radius=14,
+                         fg_color="#1769E8", text_color="white",
+                         font=ctk.CTkFont(size=34, weight="bold")).grid(row=0, column=0, rowspan=2, padx=(0, 18), sticky="w")
+        ctk.CTkLabel(header, text="Subway", font=ctk.CTkFont(size=32, weight="bold")).grid(row=0, column=1, sticky="sw")
+        ctk.CTkLabel(header, text=tr("Local subtitle generator", self.ui_language),
+                     font=ctk.CTkFont(size=15), text_color="#9DB4CF").grid(row=1, column=1, sticky="nw")
 
         workspace = ctk.CTkScrollableFrame(self, fg_color="transparent")
         workspace.grid(row=2, column=0, padx=(22, 10), pady=(12, 22), sticky="nsew")
@@ -107,8 +118,15 @@ class SubwayApp(ctk.CTk):
         file_frame = ctk.CTkFrame(workspace, corner_radius=14, border_width=1, border_color="#26364A")
         file_frame.grid(row=1, column=0, padx=4, pady=5, sticky="ew")
         file_frame.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(file_frame, text=tr("1. Create subtitles", self.ui_language), font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, columnspan=2, padx=18, pady=(16, 5), sticky="w")
-        ctk.CTkLabel(file_frame, text=tr("Choose a local video or audio file.", self.ui_language), text_color="#9DB4CF").grid(row=1, column=0, columnspan=2, padx=18, pady=(0, 10), sticky="w")
+        step1 = ctk.CTkFrame(file_frame, fg_color="transparent")
+        step1.grid(row=0, column=0, columnspan=2, padx=18, pady=(15, 5), sticky="w")
+        ctk.CTkLabel(step1, text="1", width=32, height=32, corner_radius=16,
+                     fg_color="#1680F8", text_color="white",
+                     font=ctk.CTkFont(size=15, weight="bold")).pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(step1, text=tr("1. Create subtitles", self.ui_language),
+                     font=ctk.CTkFont(size=18, weight="bold")).pack(side="left")
+        ctk.CTkLabel(file_frame, text=tr("Choose a local video or audio file.", self.ui_language),
+                     text_color="#9DB4CF").grid(row=1, column=0, columnspan=2, padx=18, pady=(0, 10), sticky="w")
         self.file_label = ctk.CTkLabel(file_frame, text=tr("No media file selected", self.ui_language), wraplength=620, anchor="w", justify="left", fg_color="#172333", corner_radius=8, height=46)
         self.file_label.grid(row=2, column=0, padx=(18, 8), pady=5, sticky="ew")
         self.select_button = ctk.CTkButton(file_frame, text=tr("Select video or audio", self.ui_language), command=self.select_file, height=40, width=175)
@@ -121,7 +139,13 @@ class SubwayApp(ctk.CTk):
         translation_frame.grid(row=2, column=0, padx=4, pady=5, sticky="ew")
         translation_frame.grid_columnconfigure(1, weight=1)
         translation_frame.grid_columnconfigure(2, weight=1)
-        ctk.CTkLabel(translation_frame, text=tr("2. Optional translation", self.ui_language), font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, columnspan=3, padx=18, pady=(16, 12), sticky="w")
+        step2 = ctk.CTkFrame(translation_frame, fg_color="transparent")
+        step2.grid(row=0, column=0, columnspan=3, padx=18, pady=(15, 12), sticky="w")
+        ctk.CTkLabel(step2, text="2", width=32, height=32, corner_radius=16,
+                     fg_color="#35475E", text_color="#D9E6F7",
+                     font=ctk.CTkFont(size=15, weight="bold")).pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(step2, text=tr("2. Optional translation", self.ui_language),
+                     font=ctk.CTkFont(size=18, weight="bold")).pack(side="left")
         ctk.CTkLabel(translation_frame, text=tr("Target language", self.ui_language)).grid(row=1, column=0, padx=(18, 8), pady=6, sticky="w")
         self.language_menu = ctk.CTkComboBox(translation_frame, values=list(LANGUAGES), width=220)
         self.language_menu.set("Ukrainian")
