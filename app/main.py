@@ -159,8 +159,8 @@ class SubwayApp(ctk.CTk):
             saved_key = load_api_key()
             if saved_key:
                 self.api_key.insert(0, saved_key)
-        except Exception as exc:
-            self.log(f"WARNING: Could not load saved API key: {exc}")
+        except Exception:
+            pass
         ctk.CTkLabel(settings, text=tr("Stored securely on this Windows account.", self.ui_language), text_color="#8199B6", wraplength=270, justify="left", font=ctk.CTkFont(size=12)).grid(row=9, column=0, padx=18, pady=(0, 14), sticky="w")
         ctk.CTkFrame(settings, height=2, fg_color="#26364A").grid(row=10, column=0, padx=18, sticky="ew")
         ctk.CTkLabel(settings, text="◎  " + tr("Interface language", self.ui_language), font=ctk.CTkFont(size=15, weight="bold")).grid(row=11, column=0, padx=18, pady=(16, 5), sticky="w")
@@ -310,7 +310,7 @@ class SubwayApp(ctk.CTk):
         model = self.selected_model
         if self.model_manager.is_downloaded(model):
             self.model_status.configure(text=f'✓ Ready • {model.size_mb} MB • {model.languages}')
-            self.download_button.configure(text='Model ready', state='disabled')
+            self.download_button.configure(text=tr('Model ready', self.ui_language), state='disabled')
             self.progress.set(1)
         else:
             self.model_status.configure(text=f'Not downloaded • {model.size_mb} MB • {model.languages}')
