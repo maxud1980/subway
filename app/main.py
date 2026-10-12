@@ -201,7 +201,7 @@ class SubwayApp(ctk.CTk):
 
         self.status = ctk.CTkTextbox(workspace, height=90, fg_color="#0D1520", text_color="#AFC4DE")
         self.status.grid(row=4, column=0, padx=4, pady=(10, 2), sticky="ew")
-        self.status.insert("1.0", tr("Ready. Select a local media file to begin.", self.ui_language) + "\\n")
+        self.status.insert("1.0", tr("Ready. Select a local media file to begin.", self.ui_language) + "\n")
         self.status.configure(state="disabled")
 
     def log(self, text: str):
@@ -461,8 +461,9 @@ class SubwayApp(ctk.CTk):
         provider = self.provider_menu.get()
         model = self.translation_model.get()
         language = self.language_menu.get()
-        self.translate_button.configure(state='disabled')
+        self.translate_button.configure(state='disabled', text='Translating…')
         self.select_srt_button.configure(state='disabled')
+        self.update_idletasks()
         self.log(f'Translating {self.current_srt.name} → {language} using {provider}...')
         threading.Thread(target=self._translate_worker, args=(self.current_srt, provider, api_key, model, language), daemon=True).start()
 
@@ -479,17 +480,17 @@ class SubwayApp(ctk.CTk):
             write_srt(result, output)
             self.after(0, self._translation_done, output, len(result))
         except Exception as exc:
-            self.after(0, self._translation_failed, exc)
+            self.after(0, lambda error=str(exc): self._translation_failed(error))
 
     def _translation_done(self, output: Path, count: int):
         self._set_srt(output)
         self.log(f'Translation done: {count} subtitles')
         self.log(f'Saved: {output}')
-        self.translate_button.configure(state='normal')
+        self.translate_button.configure(state='normal', text=tr('Translate SRT', self.ui_language))
         self.select_srt_button.configure(state='normal')
         messagebox.showinfo(APP_NAME, f'Translated SRT created successfully.\n\n{output}')
 
-    def _translation_failed(self, exc: Exception):
+    def _translation_failed(self, exc: str):
         self.log(f'ERROR: translation failed: {exc}')
         self.translate_button.configure(state='normal')
         self.select_srt_button.configure(state='normal')
