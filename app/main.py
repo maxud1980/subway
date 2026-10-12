@@ -9,12 +9,34 @@ from app.subtitles.srt import read_srt, translated_path, write_srt
 from app.transcription.engine import ParakeetEngine
 from app.transcription.models import ModelManager, ModelInfo
 from app.translation.translator import TranslationError, create_translator
+from app.settings import load_api_key, save_api_key
 
 APP_NAME = 'Subway'
 
 VIDEO_AUDIO_TYPES = [('Video and audio files', '*.mp4 *.mkv *.mov *.avi *.webm *.mp3 *.wav *.m4a *.flac *.aac'), ('All files', '*.*')]
 SRT_TYPES = [('SubRip subtitles', '*.srt'), ('All files', '*.*')]
-LANGUAGES = {'Ukrainian': 'uk', 'English': 'en', 'Russian': 'ru', 'Polish': 'pl', 'German': 'de', 'Spanish': 'es', 'French': 'fr'}
+LANGUAGES = {
+    'Afrikaans': 'af', 'Akan': 'ak', 'Albanian': 'sq', 'Amharic': 'am',
+    'Arabic': 'ar', 'Armenian': 'hy', 'Azerbaijani': 'az', 'Basque': 'eu',
+    'Belarusian': 'be', 'Bengali': 'bn', 'Bulgarian': 'bg', 'Burmese (Myanmar)': 'my',
+    'Catalan': 'ca', 'Chinese (Simplified)': 'zh-Hans', 'Chinese (Traditional)': 'zh-Hant',
+    'Croatian': 'hr', 'Czech': 'cs', 'Danish': 'da', 'Dutch': 'nl',
+    'English': 'en', 'Estonian': 'et', 'Filipino': 'fil', 'Finnish': 'fi',
+    'French': 'fr', 'Galician': 'gl', 'Georgian': 'ka', 'German': 'de',
+    'Greek': 'el', 'Gujarati': 'gu', 'Hausa': 'ha', 'Hebrew': 'he',
+    'Hindi': 'hi', 'Hungarian': 'hu', 'Icelandic': 'is', 'Indonesian': 'id',
+    'Italian': 'it', 'Japanese': 'ja', 'Javanese': 'jv', 'Kannada': 'kn',
+    'Kazakh': 'kk', 'Khmer': 'km', 'Kinyarwanda': 'rw', 'Korean': 'ko',
+    'Lao': 'lo', 'Latvian': 'lv', 'Lithuanian': 'lt', 'Macedonian': 'mk',
+    'Malay': 'ms', 'Malayalam': 'ml', 'Marathi': 'mr', 'Mongolian': 'mn',
+    'Nepali': 'ne', 'Norwegian': 'no', 'Persian': 'fa', 'Polish': 'pl',
+    'Portuguese (Brazil)': 'pt-BR', 'Portuguese (Portugal)': 'pt-PT', 'Punjabi': 'pa',
+    'Romanian': 'ro', 'Russian': 'ru', 'Serbian': 'sr', 'Sindhi': 'sd',
+    'Sinhala': 'si', 'Slovak': 'sk', 'Slovenian': 'sl', 'Spanish': 'es',
+    'Sundanese': 'su', 'Swahili': 'sw', 'Swedish': 'sv', 'Tamil': 'ta',
+    'Telugu': 'te', 'Thai': 'th', 'Turkish': 'tr', 'Ukrainian': 'uk',
+    'Urdu': 'ur', 'Uzbek': 'uz', 'Vietnamese': 'vi', 'Zulu': 'zu',
+}
 
 GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.8-flash']
 
@@ -93,6 +115,14 @@ class SubwayApp(ctk.CTk):
         ctk.CTkLabel(translation_frame, text='API key').grid(row=4, column=0, padx=(15, 8), pady=5, sticky='w')
         self.api_key = ctk.CTkEntry(translation_frame, show='•')
         self.api_key.grid(row=4, column=1, columnspan=2, padx=8, pady=5, sticky='ew')
+        self.api_key.bind('<FocusOut>', self._save_api_key)
+        try:
+            saved_key = load_api_key()
+            if saved_key:
+                self.api_key.insert(0, saved_key)
+        except Exception as exc:
+            self.log(f'WARNING: Could not load saved API key: {exc}')
+        ctk.CTkLabel(translation_frame, text='Saved encrypted for this Windows user', text_color=('gray40', 'gray70')).grid(row=4, column=0, padx=(15, 8), pady=5, sticky='w')
         self.srt_label = ctk.CTkLabel(translation_frame, text='No SRT selected', wraplength=620, anchor='w', justify='left')
         self.srt_label.grid(row=5, column=0, columnspan=2, padx=15, pady=(8, 5), sticky='ew')
         self.select_srt_button = ctk.CTkButton(translation_frame, text='Select SRT', command=self.select_srt, width=130)
@@ -125,6 +155,12 @@ class SubwayApp(ctk.CTk):
 
     def _translation_model_changed(self, model: str):
         self.log(f'Translation model: {model}')
+
+    def _save_api_key(self, _event=None):
+        try:
+            save_api_key(self.api_key.get().strip())
+        except Exception as exc:
+            self.log(f'WARNING: Could not securely save API key: {exc}')
 
     def _refresh_model_status(self):
         model = self.selected_model
@@ -250,6 +286,10 @@ class SubwayApp(ctk.CTk):
         if not api_key:
             messagebox.showwarning(APP_NAME, 'Enter an API key first.')
             return
+        try:
+            save_api_key(api_key)
+        except Exception as exc:
+            self.log(f'WARNING: API key could not be saved: {exc}')
         provider = self.provider_menu.get()
         model = self.translation_model.get()
         language = self.language_menu.get()
