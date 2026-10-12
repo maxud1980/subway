@@ -4,6 +4,9 @@
 
 Subway creates subtitles from local video/audio without uploading the media.
 
+<img width="1238" height="1047" alt="image" src="https://github.com/user-attachments/assets/a9da5201-3194-4e8b-9483-66959ed8a417" />
+
+
 ## Recognition engine
 
 The primary engine is **NVIDIA Parakeet TDT v3**, executed through NVIDIA's native **NeMo-Speech.cpp** runtime. The runtime supports Windows x64 and CUDA, while the quantized Parakeet model is kept as a separate local file rather than being embedded into the GUI executable.
