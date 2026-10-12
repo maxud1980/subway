@@ -112,7 +112,7 @@ class SubwayApp(ctk.CTk):
         )
         self.translation_model.grid(row=3, column=1, padx=8, pady=5, sticky='ew')
         self.translation_model.set(GEMINI_MODELS[0])
-        ctk.CTkLabel(translation_frame, text='API key').grid(row=4, column=0, padx=(15, 8), pady=5, sticky='w')
+        ctk.CTkLabel(translation_frame, text='API key (encrypted)').grid(row=4, column=0, padx=(15, 8), pady=5, sticky='w')
         self.api_key = ctk.CTkEntry(translation_frame, show='•')
         self.api_key.grid(row=4, column=1, columnspan=2, padx=8, pady=5, sticky='ew')
         self.api_key.bind('<FocusOut>', self._save_api_key)
@@ -122,7 +122,6 @@ class SubwayApp(ctk.CTk):
                 self.api_key.insert(0, saved_key)
         except Exception as exc:
             self.log(f'WARNING: Could not load saved API key: {exc}')
-        ctk.CTkLabel(translation_frame, text='Saved encrypted for this Windows user', text_color=('gray40', 'gray70')).grid(row=4, column=0, padx=(15, 8), pady=5, sticky='w')
         self.srt_label = ctk.CTkLabel(translation_frame, text='No SRT selected', wraplength=620, anchor='w', justify='left')
         self.srt_label.grid(row=5, column=0, columnspan=2, padx=15, pady=(8, 5), sticky='ew')
         self.select_srt_button = ctk.CTkButton(translation_frame, text='Select SRT', command=self.select_srt, width=130)
