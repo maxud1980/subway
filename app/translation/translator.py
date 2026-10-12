@@ -28,27 +28,53 @@ class Translator:
         return result
 
     def _translate_batch(self, texts: list[str]) -> list[str]:
+        """Retry malformed model output; split difficult batches without losing items."""
+        try:
+            return self._translate_batch_once(texts)
+        except TranslationError as first_error:
+            try:
+                return self._translate_batch_once(texts)
+            except TranslationError as second_error:
+                if len(texts) == 1:
+                    raise TranslationError(
+                        'Translation failed for one subtitle after retry: ' + str(second_error)
+                    ) from second_error
+                midpoint = len(texts) // 2
+                return (self._translate_batch(texts[:midpoint])
+                        + self._translate_batch(texts[midpoint:]))
+
+    def _translate_batch_once(self, texts: list[str]) -> list[str]:
         payload = {'items': [{'id': i, 'text': text} for i, text in enumerate(texts)]}
         prompt = (
             'Translate subtitle lines into {target}. Preserve meaning, tone, names, numbers and profanity. '
             'Do not explain or summarize. Keep each subtitle item separate. '
             'Return ONLY valid JSON in exactly this form: {{"items":[{{"id":0,"text":"translated text"}}]}}. '
-            'Keep every input id exactly once and do not add or remove items. Input JSON:\n{payload}'
+            'Keep every input id exactly once and do not add or remove items. Input JSON:\\n{payload}'
         ).format(target=self.config.target_language, payload=json.dumps(payload, ensure_ascii=False))
-        if self.config.provider == 'Gemini':
-            raw = self._gemini(prompt)
-        else:
+        if self.config.provider != 'Gemini':
             raise TranslationError(f'Unsupported provider: {self.config.provider}')
+        raw = self._gemini(prompt).strip()
+        if raw.startswith('```'):
+            raw = raw.split('\\n', 1)[-1].rsplit('```', 1)[0].strip()
         try:
-            data = json.loads(raw.strip())
+            data = json.loads(raw)
             items = data['items']
-            by_id = {int(item['id']): str(item['text']).strip() for item in items}
-        except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
-            raise TranslationError('Translation model returned invalid JSON.\n\n' + raw[:4000]) from exc
-        expected = set(range(len(texts)))
-        if set(by_id) != expected or any(not by_id[i] for i in expected):
-            raise TranslationError('Translation returned the wrong number of subtitle items.')
-        return [by_id[i] for i in range(len(texts))]
+            if not isinstance(items, list):
+                raise ValueError('items must be a list')
+            by_id = {}
+            for item in items:
+                item_id = item['id']
+                if not isinstance(item_id, int) or isinstance(item_id, bool) or item_id in by_id:
+                    raise ValueError('Invalid or duplicate subtitle id')
+                value = item['text']
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError('Missing subtitle text')
+                by_id[item_id] = value.strip()
+            if set(by_id) != set(range(len(texts))):
+                raise ValueError('Missing or unexpected subtitle ids')
+            return [by_id[i] for i in range(len(texts))]
+        except (ValueError, TypeError, KeyError) as exc:
+            raise TranslationError('Translation model returned malformed subtitle JSON: ' + str(exc)) from exc
 
     def _request_json(self, url: str, body: dict, headers: dict[str, str]) -> dict:
         request_body = json.dumps(body, ensure_ascii=False).encode('utf-8')
