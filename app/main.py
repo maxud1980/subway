@@ -458,7 +458,7 @@ class SubwayApp(ctk.CTk):
             save_api_key(api_key)
         except Exception as exc:
             self.log(f'WARNING: API key could not be saved: {exc}')
-        provider = self.provider_menu.get()
+        provider = 'Gemini'
         model = self.translation_model.get()
         language = self.language_menu.get()
         self.translate_button.configure(state='disabled', text='Translating…')
