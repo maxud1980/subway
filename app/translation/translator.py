@@ -37,8 +37,6 @@ class Translator:
         ).format(target=self.config.target_language, payload=json.dumps(payload, ensure_ascii=False))
         if self.config.provider == 'Gemini':
             raw = self._gemini(prompt)
-        elif self.config.provider == 'OpenAI':
-            raw = self._openai(prompt)
         else:
             raise TranslationError(f'Unsupported provider: {self.config.provider}')
         try:
@@ -87,14 +85,6 @@ class Translator:
             return ''.join(part['text'] for part in data['candidates'][0]['content']['parts'] if 'text' in part)
         except (KeyError, IndexError, TypeError) as exc:
             raise TranslationError(f'Unexpected Gemini response: {data}') from exc
-
-    def _openai(self, prompt: str) -> str:
-        body = {'model': self.config.model, 'input': prompt, 'store': False}
-        data = self._request_json('https://api.openai.com/v1/responses', body, {'Authorization': 'Bearer ' + self.config.api_key})
-        try:
-            return ''.join(item['text'] for output in data['output'] if output.get('type') == 'message' for item in output.get('content', []) if item.get('type') == 'output_text')
-        except (KeyError, TypeError) as exc:
-            raise TranslationError(f'Unexpected OpenAI response: {data}') from exc
 
 def create_translator(provider: str, api_key: str, model: str, target_language: str) -> Translator:
     if not api_key.strip():
