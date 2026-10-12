@@ -100,7 +100,7 @@ class SubwayApp(ctk.CTk):
         self.provider_menu = ctk.CTkOptionMenu(translation_frame, values=['Gemini'], command=self._provider_changed, width=130)
         self.provider_menu.grid(row=1, column=1, padx=8, pady=5, sticky='w')
         ctk.CTkLabel(translation_frame, text='Target language').grid(row=2, column=0, padx=(15, 8), pady=5, sticky='w')
-        self.language_menu = ctk.CTkOptionMenu(translation_frame, values=list(LANGUAGES), width=180)
+        self.language_menu = ctk.CTkComboBox(translation_frame, values=list(LANGUAGES), width=220)
         self.language_menu.set('Ukrainian')
         self.language_menu.grid(row=2, column=1, padx=8, pady=5, sticky='w')
         ctk.CTkLabel(translation_frame, text='Model').grid(row=3, column=0, padx=(15, 8), pady=5, sticky='w')
