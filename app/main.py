@@ -62,9 +62,9 @@ class SubwayApp(ctk.CTk):
             self.iconbitmap(str(resource_path('assets/subway.ico')))
         except Exception:
             pass
-        self.geometry('820x790')
-        self.minsize(740, 700)
-        ctk.set_appearance_mode('System')
+        self.geometry('1180x850')
+        self.minsize(1000, 740)
+        ctk.set_appearance_mode('dark')
         ctk.set_default_color_theme('blue')
 
         self.ui_language = load_ui_language()
@@ -78,85 +78,107 @@ class SubwayApp(ctk.CTk):
 
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=0, minsize=320)
         self.grid_rowconfigure(2, weight=1)
-        ctk.CTkLabel(self, text='Subway', font=ctk.CTkFont(size=32, weight='bold')).grid(row=0, column=0, padx=(30, 0), pady=(20, 2), sticky='w')
-        self.settings_button = ctk.CTkButton(self, text='⚙', command=self.open_settings, width=42, height=42, font=ctk.CTkFont(size=22), corner_radius=10)
-        self.settings_button.grid(row=0, column=1, padx=(8, 28), pady=(18, 2), sticky='e')
-        ctk.CTkLabel(self, text=tr('Local subtitle generator', self.ui_language), font=ctk.CTkFont(size=16)).grid(row=1, column=0, columnspan=2, padx=30, pady=(0, 10))
 
-        content = ctk.CTkScrollableFrame(self)
-        content.grid(row=2, column=0, columnspan=2, padx=30, pady=8, sticky='nsew')
-        content.grid_columnconfigure(0, weight=1)
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.grid(row=0, column=0, columnspan=2, padx=28, pady=(22, 4), sticky="ew")
+        ctk.CTkLabel(header, text="Subway", font=ctk.CTkFont(size=32, weight="bold")).pack(anchor="w")
+        ctk.CTkLabel(header, text=tr("Local subtitle generator", self.ui_language), font=ctk.CTkFont(size=15), text_color="#9DB4CF").pack(anchor="w")
 
-        model_frame = ctk.CTkFrame(content)
-        model_frame.grid(row=0, column=0, padx=5, pady=5, sticky='ew')
+        workspace = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        workspace.grid(row=2, column=0, padx=(22, 10), pady=(12, 22), sticky="nsew")
+        workspace.grid_columnconfigure(0, weight=1)
+
+        model_frame = ctk.CTkFrame(workspace, corner_radius=14, border_width=1, border_color="#26364A")
+        model_frame.grid(row=0, column=0, padx=4, pady=(0, 10), sticky="ew")
         model_frame.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(model_frame, text=tr('Recognition model', self.ui_language), font=ctk.CTkFont(size=14, weight='bold')).grid(row=0, column=0, columnspan=2, padx=15, pady=(12, 6), sticky='w')
+        ctk.CTkLabel(model_frame, text=tr("Recognition model", self.ui_language), font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=0, columnspan=2, padx=16, pady=(13, 7), sticky="w")
         self.model_menu = ctk.CTkOptionMenu(model_frame, values=[model.name for model in self.models], command=self._model_changed, height=38)
-        self.model_menu.grid(row=1, column=0, padx=(15, 8), pady=(0, 8), sticky='ew')
-        self.download_button = ctk.CTkButton(model_frame, text=tr('Download model', self.ui_language), command=self.download_model, height=38, width=155)
-        self.download_button.grid(row=1, column=1, padx=(8, 15), pady=(0, 8))
-        self.model_status = ctk.CTkLabel(model_frame, text='', anchor='w', justify='left')
-        self.model_status.grid(row=2, column=0, columnspan=2, padx=15, pady=(0, 8), sticky='w')
-        self.progress = ctk.CTkProgressBar(model_frame, height=10)
-        self.progress.grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 12), sticky='ew')
+        self.model_menu.grid(row=1, column=0, padx=(16, 8), pady=(0, 8), sticky="ew")
+        self.download_button = ctk.CTkButton(model_frame, text=tr("Download model", self.ui_language), command=self.download_model, height=38, width=155)
+        self.download_button.grid(row=1, column=1, padx=(8, 16), pady=(0, 8))
+        self.model_status = ctk.CTkLabel(model_frame, text="", anchor="w", justify="left", text_color="#9DB4CF")
+        self.model_status.grid(row=2, column=0, columnspan=2, padx=16, pady=(0, 7), sticky="w")
+        self.progress = ctk.CTkProgressBar(model_frame, height=8)
+        self.progress.grid(row=3, column=0, columnspan=2, padx=16, pady=(0, 13), sticky="ew")
         self.progress.set(0)
 
-        file_frame = ctk.CTkFrame(content)
-        file_frame.grid(row=1, column=0, padx=5, pady=5, sticky='ew')
+        file_frame = ctk.CTkFrame(workspace, corner_radius=14, border_width=1, border_color="#26364A")
+        file_frame.grid(row=1, column=0, padx=4, pady=5, sticky="ew")
         file_frame.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(file_frame, text=tr('1. Create subtitles', self.ui_language), font=ctk.CTkFont(size=14, weight='bold')).grid(row=0, column=0, columnspan=2, padx=15, pady=(12, 6), sticky='w')
-        self.file_label = ctk.CTkLabel(file_frame, text=tr('No media file selected', self.ui_language), wraplength=650, anchor='w', justify='left')
-        self.file_label.grid(row=1, column=0, padx=15, pady=8, sticky='ew')
-        self.select_button = ctk.CTkButton(file_frame, text=tr('Select video or audio', self.ui_language), command=self.select_file, height=40)
-        self.select_button.grid(row=2, column=0, padx=15, pady=(0, 12), sticky='w')
-        self.generate_button = ctk.CTkButton(file_frame, text=tr('Create SRT', self.ui_language), command=self.create_srt, height=40, state='disabled')
-        self.generate_button.grid(row=2, column=1, padx=15, pady=(0, 12), sticky='e')
+        ctk.CTkLabel(file_frame, text=tr("1. Create subtitles", self.ui_language), font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, columnspan=2, padx=18, pady=(16, 5), sticky="w")
+        ctk.CTkLabel(file_frame, text=tr("Choose a local video or audio file.", self.ui_language), text_color="#9DB4CF").grid(row=1, column=0, columnspan=2, padx=18, pady=(0, 10), sticky="w")
+        self.file_label = ctk.CTkLabel(file_frame, text=tr("No media file selected", self.ui_language), wraplength=620, anchor="w", justify="left", fg_color="#172333", corner_radius=8, height=46)
+        self.file_label.grid(row=2, column=0, padx=(18, 8), pady=5, sticky="ew")
+        self.select_button = ctk.CTkButton(file_frame, text=tr("Select video or audio", self.ui_language), command=self.select_file, height=40, width=175)
+        self.select_button.grid(row=2, column=1, padx=(8, 18), pady=5)
+        ctk.CTkLabel(file_frame, text=tr("Supported formats: MP4, MKV, MOV, AVI, WebM, MP3, WAV and more.", self.ui_language), text_color="#8199B6", font=ctk.CTkFont(size=12)).grid(row=3, column=0, columnspan=2, padx=18, pady=(2, 10), sticky="w")
+        self.generate_button = ctk.CTkButton(file_frame, text=tr("Create SRT", self.ui_language), command=self.create_srt, height=44, state="disabled", font=ctk.CTkFont(size=15, weight="bold"))
+        self.generate_button.grid(row=4, column=0, columnspan=2, padx=18, pady=(3, 17), sticky="ew")
 
-        translation_frame = ctk.CTkFrame(content)
-        translation_frame.grid(row=2, column=0, padx=5, pady=5, sticky='ew')
+        translation_frame = ctk.CTkFrame(workspace, corner_radius=14, border_width=1, border_color="#26364A")
+        translation_frame.grid(row=2, column=0, padx=4, pady=5, sticky="ew")
         translation_frame.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(translation_frame, text=tr('2. Optional translation', self.ui_language), font=ctk.CTkFont(size=14, weight='bold')).grid(row=0, column=0, columnspan=3, padx=15, pady=(12, 8), sticky='w')
-        ctk.CTkLabel(translation_frame, text=tr('Provider', self.ui_language)).grid(row=1, column=0, padx=(15, 8), pady=5, sticky='w')
-        self.provider_menu = ctk.CTkOptionMenu(translation_frame, values=['Gemini'], command=self._provider_changed, width=130)
-        self.provider_menu.grid(row=1, column=1, padx=8, pady=5, sticky='w')
-        ctk.CTkLabel(translation_frame, text=tr('Target language', self.ui_language)).grid(row=2, column=0, padx=(15, 8), pady=5, sticky='w')
+        translation_frame.grid_columnconfigure(2, weight=1)
+        ctk.CTkLabel(translation_frame, text=tr("2. Optional translation", self.ui_language), font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, columnspan=3, padx=18, pady=(16, 12), sticky="w")
+        ctk.CTkLabel(translation_frame, text=tr("Target language", self.ui_language)).grid(row=1, column=0, padx=(18, 8), pady=6, sticky="w")
         self.language_menu = ctk.CTkComboBox(translation_frame, values=list(LANGUAGES), width=220)
-        self.language_menu.set('Ukrainian')
-        self.language_menu.grid(row=2, column=1, padx=8, pady=5, sticky='w')
-        ctk.CTkLabel(translation_frame, text=tr('Model', self.ui_language)).grid(row=3, column=0, padx=(15, 8), pady=5, sticky='w')
-        self.translation_model = ctk.CTkOptionMenu(
-            translation_frame,
-            values=GEMINI_MODELS,
-            width=260,
-            command=self._translation_model_changed,
-        )
-        self.translation_model.grid(row=3, column=1, padx=8, pady=5, sticky='ew')
+        self.language_menu.set("Ukrainian")
+        self.language_menu.grid(row=1, column=1, columnspan=2, padx=(8, 18), pady=6, sticky="ew")
+        ctk.CTkLabel(translation_frame, text=tr("Model", self.ui_language)).grid(row=2, column=0, padx=(18, 8), pady=6, sticky="w")
+        self.translation_model = ctk.CTkOptionMenu(translation_frame, values=GEMINI_MODELS, width=240, command=self._translation_model_changed)
+        self.translation_model.grid(row=2, column=1, columnspan=2, padx=(8, 18), pady=6, sticky="ew")
         self.translation_model.set(GEMINI_MODELS[0])
-        ctk.CTkLabel(translation_frame, text=tr('API key (encrypted)', self.ui_language)).grid(row=4, column=0, padx=(15, 8), pady=5, sticky='w')
-        self.api_key = ctk.CTkEntry(translation_frame, show='•')
-        self.api_key.grid(row=4, column=1, columnspan=2, padx=8, pady=5, sticky='ew')
-        self.api_key.bind('<FocusOut>', self._save_api_key)
+        self.srt_label = ctk.CTkLabel(translation_frame, text=tr("No SRT selected", self.ui_language), wraplength=570, anchor="w", justify="left", fg_color="#172333", corner_radius=8, height=44)
+        self.srt_label.grid(row=3, column=0, columnspan=2, padx=(18, 8), pady=(12, 6), sticky="ew")
+        self.select_srt_button = ctk.CTkButton(translation_frame, text=tr("Select SRT", self.ui_language), command=self.select_srt, width=130, height=40)
+        self.select_srt_button.grid(row=3, column=2, padx=(8, 18), pady=(12, 6))
+        self.translate_button = ctk.CTkButton(translation_frame, text=tr("Translate SRT", self.ui_language), command=self.translate_srt, height=44, state="disabled", fg_color="#168A54", hover_color="#117343", font=ctk.CTkFont(size=15, weight="bold"))
+        self.translate_button.grid(row=4, column=0, columnspan=3, padx=18, pady=(7, 17), sticky="ew")
+
+        status_frame = ctk.CTkFrame(workspace, corner_radius=12, border_width=1, border_color="#26364A")
+        status_frame.grid(row=3, column=0, padx=4, pady=(5, 0), sticky="ew")
+        ctk.CTkLabel(status_frame, text="ⓘ  " + tr("Subway works locally. Your video never leaves your computer.", self.ui_language), text_color="#9DB4CF", wraplength=650, justify="left").pack(anchor="w", padx=15, pady=12)
+
+        settings = ctk.CTkFrame(self, corner_radius=14, border_width=1, border_color="#26364A")
+        settings.grid(row=2, column=1, padx=(10, 22), pady=(12, 22), sticky="nsew")
+        settings.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(settings, text="⚙  " + tr("Settings", self.ui_language), font=ctk.CTkFont(size=21, weight="bold")).grid(row=0, column=0, padx=18, pady=(18, 14), sticky="w")
+        ctk.CTkFrame(settings, height=2, fg_color="#26364A").grid(row=1, column=0, padx=18, sticky="ew")
+        ctk.CTkLabel(settings, text="◉  " + tr("About the author", self.ui_language), font=ctk.CTkFont(size=15, weight="bold")).grid(row=2, column=0, padx=18, pady=(18, 5), sticky="w")
+        ctk.CTkLabel(settings, text=f"{tr('Created by', self.ui_language)} Maxim Kapinus", text_color="#D7E4F5").grid(row=3, column=0, padx=18, pady=3, sticky="w")
+        ctk.CTkLabel(settings, text=tr("Built for creators. No servers. No limits.", self.ui_language), text_color="#9DB4CF", wraplength=270, justify="left").grid(row=4, column=0, padx=18, pady=(3, 12), sticky="w")
+        ctk.CTkButton(settings, text=tr("GitHub repository", self.ui_language), command=lambda: webbrowser.open(REPOSITORY_URL), height=32, fg_color="transparent", border_width=1).grid(row=5, column=0, padx=18, pady=(0, 14), sticky="ew")
+        ctk.CTkFrame(settings, height=2, fg_color="#26364A").grid(row=6, column=0, padx=18, sticky="ew")
+        ctk.CTkLabel(settings, text="🔑  " + tr("API key (encrypted)", self.ui_language), font=ctk.CTkFont(size=15, weight="bold")).grid(row=7, column=0, padx=18, pady=(16, 5), sticky="w")
+        self.api_key = ctk.CTkEntry(settings, show="•", placeholder_text="Gemini API key")
+        self.api_key.grid(row=8, column=0, padx=18, pady=5, sticky="ew")
+        self.api_key.bind("<FocusOut>", self._save_api_key)
         try:
             saved_key = load_api_key()
             if saved_key:
                 self.api_key.insert(0, saved_key)
         except Exception as exc:
-            self.log(f'WARNING: Could not load saved API key: {exc}')
-        self.srt_label = ctk.CTkLabel(translation_frame, text=tr('No SRT selected', self.ui_language), wraplength=620, anchor='w', justify='left')
-        self.srt_label.grid(row=5, column=0, columnspan=2, padx=15, pady=(8, 5), sticky='ew')
-        self.select_srt_button = ctk.CTkButton(translation_frame, text=tr('Select SRT', self.ui_language), command=self.select_srt, width=130)
-        self.select_srt_button.grid(row=5, column=2, padx=15, pady=5)
-        self.translate_button = ctk.CTkButton(translation_frame, text=tr('Translate SRT', self.ui_language), command=self.translate_srt, height=40, state='disabled')
-        self.translate_button.grid(row=6, column=0, columnspan=3, padx=15, pady=(8, 14), sticky='ew')
+            self.log(f"WARNING: Could not load saved API key: {exc}")
+        ctk.CTkLabel(settings, text=tr("Stored securely on this Windows account.", self.ui_language), text_color="#8199B6", wraplength=270, justify="left", font=ctk.CTkFont(size=12)).grid(row=9, column=0, padx=18, pady=(0, 14), sticky="w")
+        ctk.CTkFrame(settings, height=2, fg_color="#26364A").grid(row=10, column=0, padx=18, sticky="ew")
+        ctk.CTkLabel(settings, text="◎  " + tr("Interface language", self.ui_language), font=ctk.CTkFont(size=15, weight="bold")).grid(row=11, column=0, padx=18, pady=(16, 5), sticky="w")
+        self.ui_language_menu = ctk.CTkOptionMenu(settings, values=list(UI_LANGUAGES.keys()), command=self._change_ui_language, height=36)
+        self.ui_language_menu.set(self.ui_language)
+        self.ui_language_menu.grid(row=12, column=0, padx=18, pady=(0, 15), sticky="ew")
+        ctk.CTkFrame(settings, height=2, fg_color="#26364A").grid(row=13, column=0, padx=18, sticky="ew")
+        ctk.CTkLabel(settings, text="↻  " + tr("Check for updates", self.ui_language), font=ctk.CTkFont(size=15, weight="bold")).grid(row=14, column=0, padx=18, pady=(16, 4), sticky="w")
+        self.update_status = ctk.CTkLabel(settings, text=f"{tr('Current version', self.ui_language)}: {APP_VERSION}", text_color="#9DB4CF", wraplength=270, justify="left")
+        self.update_status.grid(row=15, column=0, padx=18, pady=(0, 7), sticky="w")
+        self.update_button = ctk.CTkButton(settings, text=tr("Check for updates", self.ui_language), command=self.check_for_updates, height=40, fg_color="transparent", border_width=1)
+        self.update_button.grid(row=16, column=0, padx=18, pady=(0, 14), sticky="ew")
+        ctk.CTkLabel(settings, text=f"Subway v{APP_VERSION}", text_color="#8199B6", font=ctk.CTkFont(size=12)).grid(row=17, column=0, padx=18, pady=(10, 15), sticky="w")
 
-        status_frame = ctk.CTkFrame(content)
-        status_frame.grid(row=3, column=0, padx=5, pady=5, sticky='ew')
-        ctk.CTkLabel(status_frame, text=tr('Status', self.ui_language), font=ctk.CTkFont(size=14, weight='bold')).pack(anchor='w', padx=15, pady=(10, 5))
-        self.status = ctk.CTkTextbox(status_frame, height=130)
-        self.status.pack(fill='both', expand=True, padx=15, pady=(0, 15))
-        self.status.insert('1.0', 'Ready. Select a local media file to begin.\n')
-        self.status.configure(state='disabled')
+        self.status = ctk.CTkTextbox(workspace, height=90, fg_color="#0D1520", text_color="#AFC4DE")
+        self.status.grid(row=4, column=0, padx=4, pady=(10, 2), sticky="ew")
+        self.status.insert("1.0", tr("Ready. Select a local media file to begin.", self.ui_language) + "\\n")
+        self.status.configure(state="disabled")
 
     def log(self, text: str):
         self.status.configure(state='normal')
@@ -165,75 +187,34 @@ class SubwayApp(ctk.CTk):
         self.status.configure(state='disabled')
 
 
-    def _rebuild_ui(self):
-        for widget in self.winfo_children():
-            widget.destroy()
-        self._build_ui()
-        self._refresh_model_status()
-        self.model_menu.set(self.selected_model.name)
-        if self.selected_file:
-            self.file_label.configure(text=str(self.selected_file))
-        if self.current_srt:
-            self._set_srt(self.current_srt)
-
-    def _change_ui_language(self, language: str, dialog):
-        if language not in UI_LANGUAGES:
+    def _change_ui_language(self, language: str):
+        if language not in UI_LANGUAGES or language == self.ui_language:
             return
         self.ui_language = language
         save_ui_language(language)
-        dialog.destroy()
-        self._rebuild_ui()
-
-    def open_settings(self):
-        lang = self.ui_language
-        dialog = ctk.CTkToplevel(self)
-        dialog.title(tr('Settings', lang))
-        dialog.geometry('470x510')
-        dialog.resizable(False, False)
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(dialog, text=tr('Settings', lang), font=ctk.CTkFont(size=22, weight='bold')).grid(
-            row=0, column=0, padx=24, pady=(20, 12), sticky='w')
-        about = ctk.CTkFrame(dialog)
-        about.grid(row=1, column=0, padx=20, pady=6, sticky='ew')
-        ctk.CTkLabel(about, text=tr('About', lang), font=ctk.CTkFont(size=15, weight='bold')).pack(
-            anchor='w', padx=14, pady=(12, 4))
-        ctk.CTkLabel(about, text=f'Subway {APP_VERSION} • {tr("Local subtitle generator", lang)}',
-                     wraplength=390, justify='left').pack(anchor='w', padx=14, pady=3)
-        ctk.CTkLabel(about, text=f'{tr("Author", lang)}: Maxim Kapinus').pack(
-            anchor='w', padx=14, pady=3)
-        ctk.CTkButton(about, text=tr('GitHub repository', lang),
-                      command=lambda: webbrowser.open(REPOSITORY_URL), height=32).pack(
-            anchor='w', padx=14, pady=(5, 12))
-
-        language_frame = ctk.CTkFrame(dialog)
-        language_frame.grid(row=2, column=0, padx=20, pady=6, sticky='ew')
-        ctk.CTkLabel(language_frame, text=tr('Interface language', lang),
-                     font=ctk.CTkFont(size=15, weight='bold')).pack(anchor='w', padx=14, pady=(12, 4))
-        ctk.CTkLabel(language_frame, text=tr('Choose the language used by the application.', lang)).pack(
-            anchor='w', padx=14, pady=(0, 5))
-        self.ui_language_menu = ctk.CTkOptionMenu(
-            language_frame, values=list(UI_LANGUAGES.keys()),
-            command=lambda value: self._change_ui_language(value, dialog), width=220)
-        self.ui_language_menu.set(self.ui_language)
-        self.ui_language_menu.pack(anchor='w', padx=14, pady=(0, 12))
-
-        updates = ctk.CTkFrame(dialog)
-        updates.grid(row=3, column=0, padx=20, pady=6, sticky='ew')
-        ctk.CTkLabel(updates, text=tr('Check for updates', lang),
-                     font=ctk.CTkFont(size=15, weight='bold')).pack(anchor='w', padx=14, pady=(12, 3))
-        ctk.CTkLabel(updates, text=tr('Check whether a newer Subway version is available.', lang),
-                     wraplength=390, justify='left').pack(anchor='w', padx=14, pady=(0, 6))
-        self.update_status = ctk.CTkLabel(updates, text=f'{tr("Current version", lang)}: {APP_VERSION}', anchor='w')
-        self.update_status.pack(fill='x', padx=14, pady=(0, 5))
-        self.update_button = ctk.CTkButton(
-            updates, text=tr('Check for updates', lang),
-            command=lambda: self.check_for_updates(dialog), height=36)
-        self.update_button.pack(anchor='e', padx=14, pady=(0, 12))
-        ctk.CTkButton(dialog, text=tr('Close', lang), command=dialog.destroy, width=110).grid(
-            row=4, column=0, padx=20, pady=(10, 18), sticky='e')
+        selected_model = self.selected_model
+        selected_file = self.selected_file
+        current_srt = self.current_srt
+        target_language = self.language_menu.get() if hasattr(self, "language_menu") else "Ukrainian"
+        translation_model = self.translation_model.get() if hasattr(self, "translation_model") else GEMINI_MODELS[0]
+        api_key = self.api_key.get() if hasattr(self, "api_key") else ""
+        for widget in self.winfo_children():
+            widget.destroy()
+        self._build_ui()
+        self.selected_model = selected_model
+        self.model_menu.set(selected_model.name)
+        self.selected_file = selected_file
+        self.current_srt = current_srt
+        self.language_menu.set(target_language)
+        self.translation_model.set(translation_model)
+        if api_key:
+            self.api_key.delete(0, "end")
+            self.api_key.insert(0, api_key)
+        if selected_file:
+            self.file_label.configure(text=str(selected_file))
+        if current_srt:
+            self._set_srt(current_srt)
+        self._refresh_model_status()
 
     def check_for_updates(self, dialog=None):
         if hasattr(self, 'update_button') and self.update_button.winfo_exists():
