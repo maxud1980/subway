@@ -29,7 +29,7 @@ jobs:
 
       - name: Build Subway GUI
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name Subway subway.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name Subway --icon assets/subway.ico --add-data "assets/subway.ico;assets" subway.py
 
       - name: Install FFmpeg
         shell: powershell
