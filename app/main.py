@@ -188,7 +188,7 @@ class SubwayApp(ctk.CTk):
         lang = self.ui_language
         dialog = ctk.CTkToplevel(self)
         dialog.title(tr('Settings', lang))
-        dialog.geometry('470x430')
+        dialog.geometry('470x510')
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -262,8 +262,29 @@ class SubwayApp(ctk.CTk):
                 self.after(0, self._update_check_done, text, (tr('Update available', lang), f'{tr("Latest version", lang)}: {tag}\\n\\n{release_url}', release_url), dialog)
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
-                text = f'{tr("Current version", lang)}: {APP_VERSION} — {tr("No published releases were found.", lang)}'
-                self.after(0, self._update_check_done, text, None, dialog)
+                try:
+                    tags_request = urllib.request.Request(
+                        'https://api.github.com/repos/maxud1980/subway/tags?per_page=1',
+                        headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'Subway-Update-Checker'})
+                    with urllib.request.urlopen(tags_request, timeout=10) as response:
+                        tags = json.loads(response.read().decode('utf-8'))
+                    if tags:
+                        tag = str(tags[0].get('name', '')).strip()
+                        latest = tag[1:] if tag.lower().startswith('v') else tag
+                        release_url = f'{REPOSITORY_URL}/releases/tag/{tag}'
+                        if latest and latest != APP_VERSION:
+                            text = f'{tr("Current version", lang)}: {APP_VERSION} • {tr("Latest version", lang)}: {tag}'
+                            info = (tr('Update available', lang), f'{tr("Latest version", lang)}: {tag}\\n\\n{release_url}', release_url)
+                            self.after(0, self._update_check_done, text, info, dialog)
+                        else:
+                            text = f'{tr("Current version", lang)}: {APP_VERSION} — {tr("You are using the latest version.", lang)}'
+                            self.after(0, self._update_check_done, text, None, dialog)
+                    else:
+                        text = f'{tr("Current version", lang)}: {APP_VERSION} — {tr("No published releases were found.", lang)}'
+                        self.after(0, self._update_check_done, text, None, dialog)
+                except Exception:
+                    text = f'{tr("Current version", lang)}: {APP_VERSION} — {tr("No published releases were found.", lang)}'
+                    self.after(0, self._update_check_done, text, None, dialog)
             else:
                 self.after(0, self._update_check_failed, tr('Could not check for updates. Check your internet connection and try again.', lang), dialog)
         except Exception:
@@ -352,7 +373,7 @@ class SubwayApp(ctk.CTk):
         messagebox.showerror(APP_NAME, f'Model download failed.\n\n{exc}')
 
     def select_file(self):
-        filename = filedialog.askopenfilename(title='Select video or audio', filetypes=VIDEO_AUDIO_TYPES)
+        filename = filedialog.askopenfilename(title=tr('Select video or audio', self.ui_language), filetypes=VIDEO_AUDIO_TYPES)
         if not filename:
             return
         self.selected_file = Path(filename)
@@ -364,7 +385,7 @@ class SubwayApp(ctk.CTk):
         self.log(f'Selected: {self.selected_file.name}')
 
     def select_srt(self):
-        filename = filedialog.askopenfilename(title='Select SRT', filetypes=SRT_TYPES)
+        filename = filedialog.askopenfilename(title=tr('Select SRT', self.ui_language), filetypes=SRT_TYPES)
         if filename:
             self._set_srt(Path(filename))
 
