@@ -297,7 +297,7 @@ class SubwayApp(ctk.CTk):
             self.update_button.configure(state='normal')
         if update_info:
             title, message, url = update_info
-            if messagebox.askyesno(title, message + '\\n\\nOpen the release page?', parent=dialog or self):
+            if messagebox.askyesno(title, message + '\\n\\n' + tr('Open the release page?', self.ui_language), parent=dialog or self):
                 webbrowser.open(url)
 
     def _update_check_failed(self, message, dialog=None):
