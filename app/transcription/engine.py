@@ -104,13 +104,15 @@ class RuntimeSelector:
                     else "Reinstall Subway; the runtime inside the app may be damaged or blocked by the system.")
             raise RuntimeError("The speech recognition runtime could not start on this computer. " + hint)
         for kind in wanted:
+            if preference == "auto" and kind == "cpu":
+                break  # No GPU was recognized: let the best working build decide by itself.
             for variant, binary, kinds in working:
                 if kind in kinds:
                     return Backend(binary, kind, f"{kind.upper()} ({variant} build)")
         if preference != "auto":
             raise RuntimeError(f"No {preference.upper()} device was found. Choose another device in Settings.")
-        variant, binary, _ = working[-1]
-        return Backend(binary, "auto", f"auto ({variant} build)")
+        variant, binary, _ = working[0]
+        return Backend(binary, "auto", f"automatic ({variant} build)")
 
 
 def parse_doctor(output: str) -> list[str]:
@@ -129,8 +131,9 @@ def parse_doctor(output: str) -> list[str]:
                     in_devices = False
                 continue
             name = match.group(1).lower()
-            for kind in ("cuda", "vulkan", "metal", "cpu"):
-                if name.startswith(kind) and kind not in kinds:
+            # ggml names devices CUDA0, Vulkan0, MTL0 (Metal), CPU …
+            for kind, prefixes in (("cuda", ("cuda",)), ("vulkan", ("vulkan",)), ("metal", ("metal", "mtl")), ("cpu", ("cpu",))):
+                if name.startswith(prefixes) and kind not in kinds:
                     kinds.append(kind)
     return kinds
 
