@@ -5,6 +5,7 @@ Usage: python smoke_runtime.py <runtime-dir>
 from __future__ import annotations
 
 import hashlib
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -25,6 +26,13 @@ def frame_hash(ffmpeg: Path, video: Path, out: Path) -> str:
     return hashlib.sha256(out.read_bytes()).hexdigest()
 
 
+def notice(message: str) -> None:
+    """Print, and surface as a GitHub annotation so the result is visible without the logs."""
+    print(message)
+    if os.environ.get("GITHUB_ACTIONS"):
+        print(f"::notice title=Runtime check::{message}")
+
+
 def main() -> None:
     runtime = Path(sys.argv[1]).resolve()
     selector = RuntimeSelector(runtime)
@@ -33,9 +41,9 @@ def main() -> None:
     assert installed, "no runtime found"
     for variant, binary in installed:
         devices = selector.devices(binary)
-        print(f"  {variant}: devices {devices}")
+        notice(f"{variant} runtime devices: {devices}")
         assert devices is not None, f"{variant} runtime does not start"
-    print("Selected:", selector.select("auto"))
+    notice(f"Automatic choice: {selector.select('auto').label}")
 
     ffmpeg = media.find_ffmpeg(runtime)
     assert ffmpeg.parent == runtime, f"FFmpeg is not the bundled one: {ffmpeg}"
@@ -58,7 +66,7 @@ def main() -> None:
         assert before != after, "subtitles were not drawn into the video"
         if len(sys.argv) > 2:
             (Path(sys.argv[2])).write_bytes((work / "after.png").read_bytes())
-    print("Runtime smoke test passed.")
+    notice("FFmpeg extracted audio and burned Cyrillic subtitles into a test video.")
 
 
 if __name__ == "__main__":
