@@ -11,27 +11,16 @@ on:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Apple Silicon: GPU acceleration through Metal plus a CPU fallback.
-          - runner: macos-15
-            arch: arm64
-            nemo_platform: macos-aarch64
-            runtimes: "metal:nemo-speech-metal cpu:nemo-speech-cpu"
-            ffmpeg_wheel: macosx_11_0_arm64
-          # Intel Macs: NeMo-Speech.cpp publishes a CPU build only.
-          - runner: macos-15-intel
-            arch: x86_64
-            nemo_platform: macos-x86_64
-            runtimes: "cpu:nemo-speech-cpu"
-            ffmpeg_wheel: macosx_10_9_x86_64
-
-    runs-on: ${{ matrix.runner }}
+    # Apple Silicon only: NeMo-Speech.cpp publishes a Metal build for arm64,
+    # while Intel Macs would get a slow CPU-only build.
+    runs-on: macos-15
     env:
       NEMO_VERSION: "0.1.0"
+      NEMO_PLATFORM: macos-aarch64
+      RUNTIMES: "metal:nemo-speech-metal cpu:nemo-speech-cpu"
+      FFMPEG_WHEEL: macosx_11_0_arm64
       APP: dist/Subway.app
+      DMG: Subway-macOS-AppleSilicon.dmg
 
     steps:
       - name: Checkout
@@ -70,10 +59,10 @@ jobs:
         run: |
           RUNTIME="$APP/Contents/Resources/runtime"
           mkdir -p "$RUNTIME"
-          for entry in ${{ matrix.runtimes }}; do
+          for entry in $RUNTIMES; do
             backend="${entry%%:*}"
             folder="${entry##*:}"
-            archive="nemo-speech-$NEMO_VERSION-${{ matrix.nemo_platform }}-$backend.tar.gz"
+            archive="nemo-speech-$NEMO_VERSION-$NEMO_PLATFORM-$backend.tar.gz"
             curl -fsSL -o "$archive" "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v$NEMO_VERSION/$archive"
             mkdir -p "$RUNTIME/$folder"
             tar -xzf "$archive" -C "$RUNTIME/$folder" --strip-components=1
@@ -87,7 +76,7 @@ jobs:
         run: |
           # Static FFmpeg build (with libass and x264) taken from the imageio-ffmpeg wheel.
           python -m pip download imageio-ffmpeg --no-deps --only-binary=:all: \
-            --platform ${{ matrix.ffmpeg_wheel }} -d ffmpeg-wheel
+            --platform "$FFMPEG_WHEEL" -d ffmpeg-wheel
           unzip -q -o ffmpeg-wheel/*.whl -d ffmpeg-wheel/extracted
           BIN=$(ls ffmpeg-wheel/extracted/imageio_ffmpeg/binaries/ffmpeg-macos-* | head -1)
           cp "$BIN" "$APP/Contents/Resources/runtime/ffmpeg"
@@ -102,14 +91,14 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$APP"
 
       - name: Check the packaged runtime
-        run: python .github/scripts/smoke_runtime.py "$APP/Contents/Resources/runtime" burned-frame-${{ matrix.arch }}.png
+        run: python .github/scripts/smoke_runtime.py "$APP/Contents/Resources/runtime" burned-frame.png
 
       - name: Launch the app
         run: |
           "$APP/Contents/MacOS/Subway" > app.log 2>&1 &
           PID=$!
           sleep 20
-          screencapture -x screenshot-${{ matrix.arch }}.png || true
+          screencapture -x screenshot.png || true
           if ! kill -0 $PID 2>/dev/null; then
             echo "Subway exited during startup:"; cat app.log; exit 1
           fi
@@ -122,27 +111,41 @@ jobs:
           mkdir dmg
           cp -R "$APP" dmg/
           ln -s /Applications dmg/Applications
-          hdiutil create -volname "Subway" -srcfolder dmg -ov -format UDZO "Subway-macOS-${{ matrix.arch }}.dmg"
+          # hdiutil intermittently fails on the hosted arm64 runners while
+          # another process still holds the image, so retry before giving up.
+          for attempt in 1 2 3 4 5; do
+            rm -f "$DMG"
+            if hdiutil create -volname "Subway" -srcfolder dmg -ov -format UDZO \
+                 -nospotlight -fs HFS+ "$DMG"; then
+              break
+            fi
+            echo "hdiutil attempt $attempt failed; detaching stale images and retrying"
+            hdiutil info | awk '/\/dev\/disk/ {print $1}' | xargs -I{} hdiutil detach {} -force || true
+            sleep $((attempt * 10))
+            if [ "$attempt" = 5 ]; then echo "hdiutil failed five times"; exit 1; fi
+          done
+          hdiutil verify "$DMG"
+          shasum -a 256 "$DMG"
 
       - name: Upload macOS distribution
         uses: actions/upload-artifact@v4
         with:
-          name: Subway-macOS-${{ matrix.arch }}
-          path: Subway-macOS-${{ matrix.arch }}.dmg
+          name: Subway-macOS-AppleSilicon
+          path: Subway-macOS-AppleSilicon.dmg
           if-no-files-found: error
 
       - name: Upload test screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: macOS-checks-${{ matrix.arch }}
+          name: macOS-checks
           path: |
-            screenshot-${{ matrix.arch }}.png
-            burned-frame-${{ matrix.arch }}.png
+            screenshot.png
+            burned-frame.png
           if-no-files-found: ignore
 
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: Subway-macOS-${{ matrix.arch }}.dmg
+          files: Subway-macOS-AppleSilicon.dmg
