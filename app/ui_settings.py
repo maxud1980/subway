@@ -9,17 +9,27 @@ import customtkinter as ctk
 from app import theme as T
 from app.config import AppSettings
 from app.i18n import GLOSSARY_HINT, UI_LANGUAGES
+from app.paths import IS_MAC
 from app.settings import load_api_key, save_api_key
 from app.transcription.engine import RuntimeSelector
 
 MENU = dict(fg_color=T.RAISED, button_color=T.LINE, button_hover_color=T.ACCENT)
 
-DEVICE_LABELS = {
-    "auto": "Automatic (best available)",
-    "cuda": "NVIDIA graphics card (CUDA)",
-    "vulkan": "Other graphics card (Vulkan)",
-    "cpu": "Processor only (slow)",
-}
+if IS_MAC:
+    DEVICE_LABELS = {
+        "auto": "Automatic (best available)",
+        "metal": "Apple graphics (Metal)",
+        "cpu": "Processor only (slow)",
+    }
+    KEY_HINT = "Stored in the macOS Keychain. Needed only for translation."
+else:
+    DEVICE_LABELS = {
+        "auto": "Automatic (best available)",
+        "cuda": "NVIDIA graphics card (CUDA)",
+        "vulkan": "Other graphics card (Vulkan)",
+        "cpu": "Processor only (slow)",
+    }
+    KEY_HINT = "Stored encrypted for this Windows account. Needed only for translation."
 
 
 class SettingsWindow(ctk.CTkToplevel):
@@ -62,7 +72,7 @@ class SettingsWindow(ctk.CTkToplevel):
         menu.set(self.s.ui_language)
         menu.grid(row=2, column=0, columnspan=3, padx=12, pady=(6, 0), sticky="w")
 
-        self._label(tab, self.t("Gemini API key"), 3, self.t("Stored encrypted for this Windows account. Needed only for translation."))
+        self._label(tab, self.t("Gemini API key"), 3, self.t(KEY_HINT))
         self.key_entry = ctk.CTkEntry(tab, show="•", placeholder_text="AIza…")
         self.key_entry.grid(row=5, column=0, columnspan=2, padx=(12, 6), pady=(6, 0), sticky="ew")
         try:

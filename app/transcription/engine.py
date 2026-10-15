@@ -33,11 +33,12 @@ class Transcript:
 
 # Runtime builds shipped in the Windows package, best first.
 RUNTIME_VARIANTS = (
-    ("cuda", "nemo-speech"),
-    ("vulkan", "nemo-speech-vulkan"),
+    ("cuda", "nemo-speech"),          # Windows: NVIDIA
+    ("metal", "nemo-speech-metal"),   # macOS: Apple Silicon GPU
+    ("vulkan", "nemo-speech-vulkan"),  # Windows: AMD / Intel GPUs
     ("cpu", "nemo-speech-cpu"),
 )
-DEVICE_CHOICES = ("auto", "cuda", "vulkan", "cpu")
+DEVICE_KINDS = ("cuda", "metal", "vulkan", "cpu")
 
 _LANG_TAG = re.compile(r"<[a-z]{2,3}(?:-[A-Za-z]{2,4})?>")
 _PERCENT = re.compile(r"(\d{1,3}(?:\.\d+)?)\s?%")
@@ -92,25 +93,26 @@ class RuntimeSelector:
                 f"NeMo-Speech runtime not found in {self.runtime_dir}. "
                 "Please reinstall Subway from the release ZIP."
             )
-        wanted = [preference] if preference in ("cuda", "vulkan", "cpu") else ["cuda", "vulkan", "cpu"]
+        wanted = [preference] if preference in DEVICE_KINDS else list(DEVICE_KINDS)
         working: list[tuple[str, Path, list[str]]] = []
         for variant, binary in installed:
             kinds = self.devices(binary)
             if kinds is not None:
                 working.append((variant, binary, kinds))
         if not working:
-            raise RuntimeError(
-                "The speech recognition runtime could not start on this computer. "
-                "Make sure the Microsoft Visual C++ Redistributable is installed and the GPU driver is up to date."
-            )
+            hint = ("Make sure the GPU driver is up to date." if sys.platform == "win32"
+                    else "Reinstall Subway; the runtime inside the app may be damaged or blocked by the system.")
+            raise RuntimeError("The speech recognition runtime could not start on this computer. " + hint)
         for kind in wanted:
+            if preference == "auto" and kind == "cpu":
+                break  # No GPU was recognized: let the best working build decide by itself.
             for variant, binary, kinds in working:
                 if kind in kinds:
                     return Backend(binary, kind, f"{kind.upper()} ({variant} build)")
         if preference != "auto":
             raise RuntimeError(f"No {preference.upper()} device was found. Choose another device in Settings.")
-        variant, binary, _ = working[-1]
-        return Backend(binary, "auto", f"auto ({variant} build)")
+        variant, binary, _ = working[0]
+        return Backend(binary, "auto", f"automatic ({variant} build)")
 
 
 def parse_doctor(output: str) -> list[str]:
@@ -129,8 +131,9 @@ def parse_doctor(output: str) -> list[str]:
                     in_devices = False
                 continue
             name = match.group(1).lower()
-            for kind in ("cuda", "vulkan", "metal", "cpu"):
-                if name.startswith(kind) and kind not in kinds:
+            # ggml names devices CUDA0, Vulkan0, MTL0 (Metal), CPU …
+            for kind, prefixes in (("cuda", ("cuda",)), ("vulkan", ("vulkan",)), ("metal", ("metal", "mtl")), ("cpu", ("cpu",))):
+                if name.startswith(prefixes) and kind not in kinds:
                     kinds.append(kind)
     return kinds
 

@@ -1,19 +1,16 @@
-"""Persistent user preferences (stored in %APPDATA%\\Subway\\settings.json)."""
+"""Persistent user preferences (settings.json in the per-user Subway folder)."""
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
+from app.paths import config_dir
 from app.subtitles.types import SubtitleParams
 
 
 def settings_path() -> Path:
-    root = os.environ.get("APPDATA")
-    folder = Path(root) / "Subway" if root else Path.home() / ".subway"
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder / "settings.json"
+    return config_dir() / "settings.json"
 
 
 @dataclass

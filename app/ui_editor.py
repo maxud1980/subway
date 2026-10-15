@@ -47,6 +47,7 @@ class EditorWindow(ctk.CTkToplevel):
         self._build()
         self._load(self.path)
         self.bind("<Control-s>", lambda _e: self.save())
+        self.bind("<Command-s>", lambda _e: self.save())
 
     def _style(self) -> None:
         style = ttk.Style(self)
@@ -55,9 +56,9 @@ class EditorWindow(ctk.CTkToplevel):
         except Exception:
             pass
         style.configure("Subway.Treeview", background=T.SURFACE, fieldbackground=T.SURFACE, foreground=T.TEXT,
-                        rowheight=28, borderwidth=0, font=("Segoe UI", 10))
+                        rowheight=28, borderwidth=0, font=(T.UI_FONT, T.TABLE_SIZE))
         style.configure("Subway.Treeview.Heading", background=T.RAISED, foreground=T.MUTED, relief="flat",
-                        font=("Segoe UI", 10, "bold"))
+                        font=(T.UI_FONT, T.TABLE_SIZE, "bold"))
         style.map("Subway.Treeview", background=[("selected", T.ACCENT)], foreground=[("selected", "#FFFFFF")])
         style.map("Subway.Treeview.Heading", background=[("active", T.LINE)])
         style.layout("Subway.Treeview", [("Subway.Treeview.treearea", {"sticky": "nswe"})])
@@ -245,7 +246,7 @@ class EditorWindow(ctk.CTkToplevel):
                 media.stop_playback()
                 media.extract_clip(ffmpeg, self.media_path, sub.start - 0.3, sub.end + 0.3, clip)
                 if not media.play_wav(clip):
-                    error = self.t("Audio preview is available on Windows only.")
+                    error = self.t("Audio preview is not available on this system.")
             except Exception as exc:  # noqa: BLE001
                 error = str(exc)
             self.after(0, self._played, error)

@@ -1,5 +1,5 @@
 from app.config import AppSettings
-from app.transcription.engine import language_argument, parse_doctor, parse_words
+from app.transcription.engine import RuntimeSelector, language_argument, parse_doctor, parse_words
 from app.transcription.models import MODELS, get_model
 
 
@@ -13,6 +13,21 @@ Devices:
 Model downloads: curl
 """
     assert parse_doctor(output) == ["cuda", "vulkan", "cpu"]
+    assert parse_doctor("Devices:\n  [0] MTL0  Apple M2\n  [1] cpu  Apple M2\n") == ["metal", "cpu"]
+
+
+def test_auto_without_gpu_lets_runtime_decide(tmp_path, monkeypatch):
+    for folder in ("nemo-speech-metal", "nemo-speech-cpu"):
+        (tmp_path / folder / "bin").mkdir(parents=True)
+        for name in ("nemo-speech", "nemo-speech.exe"):
+            (tmp_path / folder / "bin" / name).write_text("")
+    selector = RuntimeSelector(tmp_path)
+    monkeypatch.setattr(selector, "devices", lambda binary: ["cpu"])
+    backend = selector.select("auto")
+    assert backend.device == "auto" and "nemo-speech-metal" in str(backend.binary)
+    assert selector.select("cpu").device == "cpu"
+    monkeypatch.setattr(selector, "devices", lambda binary: ["metal", "cpu"] if "metal" in str(binary) else ["cpu"])
+    assert selector.select("auto").device == "metal"
 
 
 def test_parse_words_nested_and_language_tags():

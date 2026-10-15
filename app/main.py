@@ -58,6 +58,8 @@ def open_in_explorer(path: Path) -> None:
                 subprocess.Popen(["explorer", "/select,", str(path)])
             else:
                 os.startfile(str(path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(path)] if path.is_file() else ["open", str(path)])
         else:
             subprocess.Popen(["xdg-open", str(path if path.is_dir() else path.parent)])
     except OSError:
@@ -104,6 +106,11 @@ class SubwayApp(*_Base):  # type: ignore[misc]
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        if sys.platform == "darwin":
+            try:  # Cmd+Q and "Quit Subway" in the menu bar ask the same question as closing the window.
+                self.createcommand("tk::mac::Quit", self._on_close)
+            except Exception:
+                pass
         self.after(1500, lambda: self.check_for_updates(silent=True))
 
     # ------------------------------------------------------------------ utils
@@ -319,7 +326,7 @@ class SubwayApp(*_Base):  # type: ignore[misc]
 
     def _build_log(self) -> None:
         self.log_box = ctk.CTkTextbox(self, height=150, fg_color=T.SURFACE, text_color="#AFC4DE",
-                                      border_width=1, border_color=T.LINE, font=ctk.CTkFont(family="Consolas", size=12))
+                                      border_width=1, border_color=T.LINE, font=ctk.CTkFont(family=T.MONO_FONT, size=12))
         self.log_box.insert("1.0", "\n".join(self.log_lines) + ("\n" if self.log_lines else ""))
         self.log_box.configure(state="disabled")
         if self.log_visible:
