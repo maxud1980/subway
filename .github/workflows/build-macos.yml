@@ -9,6 +9,10 @@ on:
     branches:
       - "main"
 
+# Needed so the tag build can attach the package to the release.
+permissions:
+  contents: write
+
 jobs:
   build:
     # Apple Silicon only: NeMo-Speech.cpp publishes a Metal build for arm64,
