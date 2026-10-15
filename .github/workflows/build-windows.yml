@@ -27,31 +27,41 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install pyinstaller
 
+      - name: Run tests
+        run: |
+          python -m pip install pytest
+          python -m pytest -q
+
       - name: Build Subway GUI
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name Subway --icon assets/subway.ico --add-data "assets/subway.ico;assets" subway.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name Subway --icon assets/subway.ico --add-data "assets/subway.ico;assets" --collect-all tkinterdnd2 subway.py
 
       - name: Install FFmpeg
         shell: powershell
         run: choco install ffmpeg -y --no-progress
 
-      - name: Download native NeMo-Speech runtime
+      - name: Download native NeMo-Speech runtimes
         shell: powershell
         run: |
+          # Three builds of the same runtime: CUDA for NVIDIA cards, Vulkan for
+          # AMD/Intel cards and a CPU fallback. Subway picks one at run time.
+          $version = "0.1.0"
+          $variants = @{ "cuda" = "nemo-speech"; "vulkan" = "nemo-speech-vulkan"; "cpu" = "nemo-speech-cpu" }
           New-Item -ItemType Directory -Force -Path package\runtime | Out-Null
-          New-Item -ItemType Directory -Force -Path package\nemo-extract | Out-Null
-          Invoke-WebRequest -Uri "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.1.0/nemo-speech-0.1.0-windows-x86_64-cuda.zip" -OutFile nemo.zip
-          Expand-Archive nemo.zip -DestinationPath package\nemo-extract -Force
-          $exe = Get-ChildItem package\nemo-extract -Recurse -Filter nemo-speech.exe | Select-Object -First 1
-          if (-not $exe) { throw "nemo-speech.exe not found in the NeMo-Speech archive" }
-          $sourceRoot = $exe.Directory.Parent
-          New-Item -ItemType Directory -Force -Path package\runtime\nemo-speech | Out-Null
-          Copy-Item "$($sourceRoot.FullName)\*" package\runtime\nemo-speech -Recurse -Force
-          if (-not (Test-Path package\runtime\nemo-speech\bin\nemo-speech.exe)) {
-            throw "Unexpected NeMo-Speech archive layout"
+          foreach ($variant in $variants.Keys) {
+            $target = "package\runtime\$($variants[$variant])"
+            $zip = "nemo-$variant.zip"
+            $extract = "nemo-extract-$variant"
+            Invoke-WebRequest -Uri "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v$version/nemo-speech-$version-windows-x86_64-$variant.zip" -OutFile $zip
+            Expand-Archive $zip -DestinationPath $extract -Force
+            $exe = Get-ChildItem $extract -Recurse -Filter nemo-speech.exe | Select-Object -First 1
+            if (-not $exe) { throw "nemo-speech.exe not found in the $variant archive" }
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            Copy-Item "$($exe.Directory.Parent.FullName)\*" $target -Recurse -Force
+            if (-not (Test-Path "$target\bin\nemo-speech.exe")) { throw "Unexpected NeMo-Speech $variant archive layout" }
+            Remove-Item $extract -Recurse -Force
+            Remove-Item $zip -Force
           }
-          Remove-Item package\nemo-extract -Recurse -Force
-          Remove-Item nemo.zip -Force
 
       - name: Assemble distribution
         shell: powershell
