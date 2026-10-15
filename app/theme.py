@@ -3,6 +3,7 @@
 The queue is drawn as a metro line: each file is a station whose dot shows
 its state, which is where the app's name comes from.
 """
+import sys
 
 BG = "#141B26"
 SURFACE = "#1C2533"
@@ -23,6 +24,13 @@ STATUS_COLORS = {
     "failed": DANGER,
     "cancelled": WARNING,
 }
+
+if sys.platform == "darwin":
+    UI_FONT, MONO_FONT, TABLE_SIZE = "Helvetica Neue", "Menlo", 13
+elif sys.platform == "win32":
+    UI_FONT, MONO_FONT, TABLE_SIZE = "Segoe UI", "Consolas", 10
+else:
+    UI_FONT, MONO_FONT, TABLE_SIZE = "DejaVu Sans", "DejaVu Sans Mono", 10
 
 PAD = 16
 RADIUS = 10

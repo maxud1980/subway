@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
@@ -120,8 +119,3 @@ def _stop(process: subprocess.Popen) -> None:
         except Exception:
             pass
 
-
-def frozen_base() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parents[1]

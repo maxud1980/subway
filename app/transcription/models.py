@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from app.process import CancelToken, Cancelled, frozen_base
+from app.paths import models_live_in_app_folder, runtime_dir, user_models_dir
+from app.process import CancelToken, Cancelled
 
 
 @dataclass(frozen=True)
@@ -71,13 +71,7 @@ def get_model(model_id: str) -> ModelInfo:
 
 
 def default_runtime_dir() -> Path:
-    """The runtime folder shipped beside Subway.exe (or the repo root in development)."""
-    return frozen_base() / "runtime"
-
-
-def _user_models_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    return Path(root) / "Subway" / "models"
+    return runtime_dir()
 
 
 def _writable(folder: Path) -> bool:
@@ -97,7 +91,9 @@ class ModelManager:
         # Models live beside the app when that folder is writable (portable
         # install), otherwise in the user's profile (e.g. Program Files).
         self.models_dir = self.runtime_dir / "models"
-        self.fallback_dir = _user_models_dir()
+        self.fallback_dir = user_models_dir()
+        if not models_live_in_app_folder():
+            self.models_dir = self.fallback_dir
 
     def available_models(self) -> list[ModelInfo]:
         return MODELS

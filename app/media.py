@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -133,7 +134,7 @@ def burn_subtitles(ffmpeg: Path, video: Path, ass_file: Path, output: Path, dura
         command = [
             ffmpeg, "-hide_banner", "-nostdin", "-y", "-stats",
             "-i", video,
-            "-vf", "ass=subs.ass",
+            "-vf", _ass_filter(),
             "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart",
@@ -154,18 +155,44 @@ def burn_subtitles(ffmpeg: Path, video: Path, ass_file: Path, output: Path, dura
         shutil.rmtree(work, ignore_errors=True)
 
 
+def _ass_filter() -> str:
+    # The static macOS FFmpeg has no usable fontconfig setup, so point libass
+    # at the system font folders where Arial and Cyrillic fonts live.
+    if sys.platform == "darwin":
+        for folder in ("/System/Library/Fonts/Supplemental", "/Library/Fonts", "/System/Library/Fonts"):
+            if Path(folder).is_dir():
+                return f"ass=subs.ass:fontsdir={folder}"
+    return "ass=subs.ass"
+
+
+_player: subprocess.Popen | None = None
+
+
 def play_wav(path: Path) -> bool:
     """Play a WAV file asynchronously. Returns False where unsupported."""
-    if sys.platform != "win32":
-        return False
-    import winsound  # type: ignore
+    global _player
+    if sys.platform == "win32":
+        import winsound  # type: ignore
 
-    winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_ASYNC)
-    return True
+        winsound.PlaySound(str(path), winsound.SND_FILENAME | winsound.SND_ASYNC)
+        return True
+    if sys.platform == "darwin":
+        stop_playback()
+        _player = subprocess.Popen(["/usr/bin/afplay", str(path)], stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    return False
 
 
 def stop_playback() -> None:
+    global _player
     if sys.platform == "win32":
         import winsound  # type: ignore
 
         winsound.PlaySound(None, 0)
+    elif _player is not None:
+        try:
+            _player.terminate()
+        except Exception:
+            pass
+        _player = None

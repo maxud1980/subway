@@ -1,0 +1,146 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - "main"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Apple Silicon: GPU acceleration through Metal plus a CPU fallback.
+          - runner: macos-15
+            arch: arm64
+            nemo_platform: macos-aarch64
+            runtimes: "metal:nemo-speech-metal cpu:nemo-speech-cpu"
+            ffmpeg_wheel: macosx_11_0_arm64
+          # Intel Macs: NeMo-Speech.cpp publishes a CPU build only.
+          - runner: macos-15-intel
+            arch: x86_64
+            nemo_platform: macos-x86_64
+            runtimes: "cpu:nemo-speech-cpu"
+            ffmpeg_wheel: macosx_10_9_x86_64
+
+    runs-on: ${{ matrix.runner }}
+    env:
+      NEMO_VERSION: "0.1.0"
+      APP: dist/Subway.app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -c "import tkinter; print('Tk', tkinter.TkVersion)"
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller pytest
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Build Subway.app
+        run: |
+          VERSION=$(python -c "import re;print(re.search(r'APP_VERSION = \"([^\"]+)\"', open('app/main.py').read()).group(1))")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          pyinstaller --noconfirm --clean --windowed --name Subway \
+            --icon assets/subway.ico --add-data "assets/subway.ico:assets" \
+            --collect-all tkinterdnd2 \
+            --osx-bundle-identifier com.maxud1980.subway \
+            subway.py
+          PLIST="$APP/Contents/Info.plist"
+          plutil -replace CFBundleShortVersionString -string "$VERSION" "$PLIST"
+          plutil -replace CFBundleVersion -string "$VERSION" "$PLIST"
+          plutil -replace NSHighResolutionCapable -bool true "$PLIST"
+          plutil -replace LSMinimumSystemVersion -string "11.0" "$PLIST"
+
+      - name: Add NeMo-Speech runtimes
+        run: |
+          RUNTIME="$APP/Contents/Resources/runtime"
+          mkdir -p "$RUNTIME"
+          for entry in ${{ matrix.runtimes }}; do
+            backend="${entry%%:*}"
+            folder="${entry##*:}"
+            archive="nemo-speech-$NEMO_VERSION-${{ matrix.nemo_platform }}-$backend.tar.gz"
+            curl -fsSL -o "$archive" "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v$NEMO_VERSION/$archive"
+            mkdir -p "$RUNTIME/$folder"
+            tar -xzf "$archive" -C "$RUNTIME/$folder" --strip-components=1
+            rm "$archive"
+            test -x "$RUNTIME/$folder/bin/nemo-speech" || { echo "nemo-speech missing in $archive"; exit 1; }
+            xattr -cr "$RUNTIME/$folder" || true
+            "$RUNTIME/$folder/bin/nemo-speech" doctor
+          done
+
+      - name: Add FFmpeg
+        run: |
+          # Static FFmpeg build (with libass and x264) taken from the imageio-ffmpeg wheel.
+          python -m pip download imageio-ffmpeg --no-deps --only-binary=:all: \
+            --platform ${{ matrix.ffmpeg_wheel }} -d ffmpeg-wheel
+          unzip -q -o ffmpeg-wheel/*.whl -d ffmpeg-wheel/extracted
+          BIN=$(ls ffmpeg-wheel/extracted/imageio_ffmpeg/binaries/ffmpeg-macos-* | head -1)
+          cp "$BIN" "$APP/Contents/Resources/runtime/ffmpeg"
+          chmod +x "$APP/Contents/Resources/runtime/ffmpeg"
+          "$APP/Contents/Resources/runtime/ffmpeg" -hide_banner -version | head -1
+          "$APP/Contents/Resources/runtime/ffmpeg" -hide_banner -filters | grep -E "^ ... ass "
+          rm -rf ffmpeg-wheel
+
+      - name: Sign the app (ad-hoc)
+        run: |
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Check the packaged runtime
+        run: python .github/scripts/smoke_runtime.py "$APP/Contents/Resources/runtime" burned-frame-${{ matrix.arch }}.png
+
+      - name: Launch the app
+        run: |
+          "$APP/Contents/MacOS/Subway" > app.log 2>&1 &
+          PID=$!
+          sleep 20
+          screencapture -x screenshot-${{ matrix.arch }}.png || true
+          if ! kill -0 $PID 2>/dev/null; then
+            echo "Subway exited during startup:"; cat app.log; exit 1
+          fi
+          kill $PID
+          cat app.log
+
+      - name: Create DMG
+        run: |
+          mkdir dmg
+          cp -R "$APP" dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Subway" -srcfolder dmg -ov -format UDZO "Subway-macOS-${{ matrix.arch }}.dmg"
+
+      - name: Upload macOS distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: Subway-macOS-${{ matrix.arch }}
+          path: Subway-macOS-${{ matrix.arch }}.dmg
+          if-no-files-found: error
+
+      - name: Upload test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS-checks-${{ matrix.arch }}
+          path: |
+            screenshot-${{ matrix.arch }}.png
+            burned-frame-${{ matrix.arch }}.png
+          if-no-files-found: ignore
+
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Subway-macOS-${{ matrix.arch }}.dmg
