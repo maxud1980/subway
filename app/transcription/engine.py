@@ -1,17 +1,19 @@
+"""Speech recognition through NVIDIA's native NeMo-Speech.cpp runtime."""
+from __future__ import annotations
+
+import json
 import re
-import subprocess
 import sys
-import tempfile
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
+from typing import Callable
 
+from app.process import CancelToken, run
+from app.subtitles.srt import read_srt
+from app.subtitles.types import Word
 
-@dataclass
-class TranscriptWord:
-    text: str
-    start: float
-    end: float
+from .models import ModelInfo
 
 
 @dataclass
@@ -19,183 +21,254 @@ class TranscriptSegment:
     text: str
     start: float
     end: float
-    words: list[TranscriptWord]
+    words: list[Word] = field(default_factory=list)
 
 
-class TranscriptionEngine:
-    name = "Base"
+@dataclass
+class Transcript:
+    words: list[Word]
+    segments: list[TranscriptSegment]  # Used only when word timings are unavailable.
+    backend: str = ""
 
-    def transcribe(self, media_path: Path) -> Iterator[TranscriptSegment]:
-        raise NotImplementedError
+
+# Runtime builds shipped in the Windows package, best first.
+RUNTIME_VARIANTS = (
+    ("cuda", "nemo-speech"),
+    ("vulkan", "nemo-speech-vulkan"),
+    ("cpu", "nemo-speech-cpu"),
+)
+DEVICE_CHOICES = ("auto", "cuda", "vulkan", "cpu")
+
+_LANG_TAG = re.compile(r"<[a-z]{2,3}(?:-[A-Za-z]{2,4})?>")
+_PERCENT = re.compile(r"(\d{1,3}(?:\.\d+)?)\s?%")
 
 
-class ParakeetEngine(TranscriptionEngine):
-    """Parakeet through NVIDIA's native NeMo-Speech.cpp runtime."""
+@dataclass
+class Backend:
+    binary: Path
+    device: str  # value for --device
+    label: str
 
-    name = "Parakeet TDT v3"
-    model_name = "parakeet-tdt-0.6b-v3.q8_0.gguf"
 
-    def __init__(self, runtime_dir: Path | None = None, model_name: str | None = None):
-        if runtime_dir is None:
-            if getattr(sys, "frozen", False):
-                runtime_dir = Path(sys.executable).resolve().parent / "runtime"
-            else:
-                runtime_dir = Path(__file__).resolve().parents[2] / "runtime"
+def _binary_in(folder: Path) -> Path:
+    name = "nemo-speech.exe" if sys.platform == "win32" else "nemo-speech"
+    return folder / "bin" / name
+
+
+class RuntimeSelector:
+    """Finds a runtime build and device that work on this computer."""
+
+    def __init__(self, runtime_dir: Path):
         self.runtime_dir = runtime_dir
-        if model_name:
-            self.model_name = model_name
+        self._cache: dict[Path, list[str] | None] = {}
+        self._lock = threading.Lock()
 
-    def _binary(self) -> Path:
-        name = "nemo-speech.exe" if sys.platform == "win32" else "nemo-speech"
-        path = self.runtime_dir / "nemo-speech" / "bin" / name
-        if not path.exists():
-            raise RuntimeError(f"NeMo-Speech runtime not found: {path}")
-        return path
+    def installed(self) -> list[tuple[str, Path]]:
+        found = []
+        for variant, folder in RUNTIME_VARIANTS:
+            binary = _binary_in(self.runtime_dir / folder)
+            if binary.exists():
+                found.append((variant, binary))
+        return found
 
-    def _model(self) -> Path:
-        path = self.runtime_dir / "models" / self.model_name
-        if not path.exists():
-            raise RuntimeError(f"Model not found: {path}")
-        return path
-
-    def _ffmpeg(self) -> Path:
-        name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-        path = self.runtime_dir / name
-        if not path.exists():
-            raise RuntimeError(f"FFmpeg not found: {path}")
-        return path
-
-    def _to_wav(self, media_path: Path) -> Path:
-        temp_dir = Path(tempfile.gettempdir()) / "Subway"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        wav_path = temp_dir / f"{media_path.stem}-{id(media_path)}.wav"
-
-        command = [
-            str(self._ffmpeg()),
-            "-hide_banner",
-            "-loglevel", "error",
-            "-nostdin",
-            "-y",
-            "-i", str(media_path),
-            "-map", "0:a:0?",
-            "-vn",
-            "-sn",
-            "-dn",
-            "-ac", "1",
-            "-ar", "16000",
-            "-c:a", "pcm_s16le",
-            str(wav_path),
-        ]
-
+    def devices(self, binary: Path) -> list[str] | None:
+        """Device kinds reported by `nemo-speech doctor`, or None if it cannot run."""
+        with self._lock:
+            if binary in self._cache:
+                return self._cache[binary]
         try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-        except OSError as exc:
-            raise RuntimeError(f"Unable to start FFmpeg: {exc}") from exc
+            code, output = run([binary, "doctor"], timeout=60)
+            kinds = parse_doctor(output) if code == 0 else None
+        except Exception:
+            kinds = None
+        with self._lock:
+            self._cache[binary] = kinds
+        return kinds
 
-        if result.returncode != 0:
-            details = (result.stderr or result.stdout).strip()
-            if not details:
-                details = f"FFmpeg exited with code {result.returncode}."
-            raise RuntimeError(f"FFmpeg conversion failed:\n{details[-4000:]}")
-
-        if not wav_path.exists() or wav_path.stat().st_size < 44:
+    def select(self, preference: str = "auto") -> Backend:
+        installed = self.installed()
+        if not installed:
             raise RuntimeError(
-                "FFmpeg did not produce an audio file. "
-                "The selected media may contain no audio track."
+                f"NeMo-Speech runtime not found in {self.runtime_dir}. "
+                "Please reinstall Subway from the release ZIP."
             )
-
-        return wav_path
-
-    @staticmethod
-    def _parse_timestamp(value: str) -> float:
-        match = re.fullmatch(r"(\d+):(\d{2}):(\d{2})[,.](\d{3})", value.strip())
-        if not match:
-            raise ValueError(f"Invalid SRT timestamp: {value}")
-        hours, minutes, seconds, millis = map(int, match.groups())
-        return hours * 3600 + minutes * 60 + seconds + millis / 1000
-
-    @classmethod
-    def _read_srt(cls, path: Path) -> list[TranscriptSegment]:
-        text = path.read_text(encoding="utf-8-sig", errors="replace")
-        blocks = re.split(r"\r?\n\s*\r?\n", text.strip())
-        segments: list[TranscriptSegment] = []
-
-        for block in blocks:
-            lines = [line.strip() for line in block.splitlines()]
-            if len(lines) < 3:
-                continue
-
-            timing_index = next(
-                (i for i, line in enumerate(lines) if " --> " in line),
-                None,
+        wanted = [preference] if preference in ("cuda", "vulkan", "cpu") else ["cuda", "vulkan", "cpu"]
+        working: list[tuple[str, Path, list[str]]] = []
+        for variant, binary in installed:
+            kinds = self.devices(binary)
+            if kinds is not None:
+                working.append((variant, binary, kinds))
+        if not working:
+            raise RuntimeError(
+                "The speech recognition runtime could not start on this computer. "
+                "Make sure the Microsoft Visual C++ Redistributable is installed and the GPU driver is up to date."
             )
-            if timing_index is None:
+        for kind in wanted:
+            for variant, binary, kinds in working:
+                if kind in kinds:
+                    return Backend(binary, kind, f"{kind.upper()} ({variant} build)")
+        if preference != "auto":
+            raise RuntimeError(f"No {preference.upper()} device was found. Choose another device in Settings.")
+        variant, binary, _ = working[-1]
+        return Backend(binary, "auto", f"auto ({variant} build)")
+
+
+def parse_doctor(output: str) -> list[str]:
+    """Extract device kinds from the `Devices:` section of `nemo-speech doctor`."""
+    kinds: list[str] = []
+    in_devices = False
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("devices"):
+            in_devices = True
+            continue
+        if in_devices:
+            match = re.match(r"\[\d+\]\s+(\S+)", stripped)
+            if not match:
+                if stripped and not line.startswith((" ", "\t")):
+                    in_devices = False
                 continue
+            name = match.group(1).lower()
+            for kind in ("cuda", "vulkan", "metal", "cpu"):
+                if name.startswith(kind) and kind not in kinds:
+                    kinds.append(kind)
+    return kinds
 
-            start_text, end_text = [part.strip() for part in lines[timing_index].split(" --> ", 1)]
-            start = cls._parse_timestamp(start_text)
-            end = cls._parse_timestamp(end_text)
-            subtitle_text = " ".join(lines[timing_index + 1:]).strip()
 
-            if subtitle_text and end > start:
-                segments.append(TranscriptSegment(subtitle_text, start, end, []))
+def _strip_tags(text: str) -> str:
+    return _LANG_TAG.sub("", text).strip()
 
-        return segments
 
-    def transcribe(self, media_path: Path) -> Iterator[TranscriptSegment]:
-        wav_path = self._to_wav(media_path)
-        output_srt = wav_path.with_suffix(".srt")
+def _number(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
+
+def parse_words(data, duration: float = 0.0) -> list[Word]:
+    """Find timed words anywhere in NeMo-Speech JSON output."""
+    words: list[Word] = []
+
+    def visit(node) -> None:
+        if isinstance(node, dict):
+            for key in ("words", "word_timestamps", "tokens"):
+                items = node.get(key)
+                if isinstance(items, list) and items and all(isinstance(i, dict) for i in items):
+                    parsed = []
+                    for item in items:
+                        text = item.get("word", item.get("text", item.get("token")))
+                        start = _number(item.get("start", item.get("start_time", item.get("start_offset"))))
+                        end = _number(item.get("end", item.get("end_time", item.get("end_offset"))))
+                        if isinstance(text, str) and start is not None and end is not None:
+                            parsed.append(Word(_strip_tags(text), start, end))
+                    if parsed:
+                        words.extend(parsed)
+                        return
+            for value in node.values():
+                visit(value)
+        elif isinstance(node, list):
+            for value in node:
+                visit(value)
+
+    visit(data)
+    words = [w for w in words if w.text]
+    if words and duration > 0 and max(w.end for w in words) > duration * 1.5 + 5:
+        words = [Word(w.text, w.start / 1000, w.end / 1000) for w in words]  # milliseconds
+    words.sort(key=lambda w: w.start)
+    return words
+
+
+def language_argument(model: ModelInfo, language: str) -> str | None:
+    """Map a UI language choice ("auto", "uk", "uk-UA") to a model locale."""
+    if not model.supports_language:
+        return None
+    if not language or language == "auto":
+        return "auto"
+    if language in model.language_codes:
+        return language
+    prefix = language.split("-")[0].lower()
+    return next((code for code in model.language_codes if code.lower().startswith(prefix + "-")), "auto")
+
+
+class NemoSpeechEngine:
+    def __init__(self, runtime_dir: Path, selector: RuntimeSelector | None = None):
+        self.runtime_dir = runtime_dir
+        self.selector = selector or RuntimeSelector(runtime_dir)
+
+    def transcribe(
+        self,
+        wav: Path,
+        model: ModelInfo,
+        model_path: Path,
+        language: str = "auto",
+        device: str = "auto",
+        phrases: list[str] | None = None,
+        duration: float = 0.0,
+        cancel: CancelToken | None = None,
+        progress: Callable[[float | None], None] | None = None,
+        log: Callable[[str], None] | None = None,
+    ) -> Transcript:
+        backend = self.selector.select(device)
+        if log:
+            log(f"Recognition device: {backend.label}")
+        output = wav.with_suffix(".json")
+
+        def base(fmt: str, target: Path, with_phrases: bool) -> list:
+            command = [backend.binary, "transcribe", wav, "--model", model_path,
+                       "--format", fmt, "--output", target, "--force"]
+            if backend.device != "auto":
+                command += ["--device", backend.device]
+            lang = language_argument(model, language)
+            if lang:
+                command += ["--language", lang]
+            if with_phrases:
+                for phrase in phrases or []:
+                    command += ["--speech-context", phrase]
+            return command
+
+        def on_line(line: str) -> None:
+            match = _PERCENT.search(line)
+            if match and progress:
+                progress(min(float(match.group(1)) / 100, 1.0))
+
+        def attempt(fmt: str, target: Path) -> None:
+            use_phrases = bool(phrases)
+            code, text = run(base(fmt, target, use_phrases), cancel, on_line)
+            if code != 0 and use_phrases:
+                if log:
+                    log("Glossary boosting is not supported by this model; retrying without it.")
+                code, text = run(base(fmt, target, False), cancel, on_line)
+            if code != 0:
+                lines = text.splitlines()
+                raise RuntimeError(f"Speech recognition failed (exit code {code}):\n" + "\n".join(lines[-20:]))
+            if not target.exists():
+                raise RuntimeError("Speech recognition finished without producing a result.\n" + text[-1500:])
+
+        srt = wav.with_suffix(".srt")
         try:
-            command = [
-                str(self._binary()),
-                "transcribe",
-                str(wav_path),
-                "--model", str(self._model()),
-                "--format", "srt",
-                "--output", str(output_srt),
+            attempt("json", output)
+            try:
+                data = json.loads(output.read_text(encoding="utf-8", errors="replace"))
+            except ValueError:
+                data = None
+            words = parse_words(data, duration) if data is not None else []
+            if words:
+                return Transcript(words, [], backend.label)
+
+            if log:
+                log("Word timings are unavailable; using the runtime's subtitle segments.")
+            attempt("srt", srt)
+            segments = [
+                TranscriptSegment(_strip_tags(s.text.replace("\n", " ")), s.start, s.end)
+                for s in read_srt(srt)
             ]
-
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-
-            if result.returncode != 0:
-                details = (result.stderr or result.stdout).strip()
-                raise RuntimeError(
-                    f"Parakeet transcription failed (exit code {result.returncode}):\n"
-                    f"{details[-4000:]}"
-                )
-
-            if not output_srt.exists():
-                raise RuntimeError(
-                    "Parakeet completed without producing an SRT file.\n\n"
-                    f"Output:\n{result.stdout[-2000:]}"
-                )
-
-            segments = self._read_srt(output_srt)
+            segments = [s for s in segments if s.text]
             if not segments:
-                raise RuntimeError(
-                    "Parakeet returned an empty transcript. "
-                    "The model may not have detected speech in the selected file."
-                )
-
-            yield from segments
-
+                raise RuntimeError("No speech was recognized in this file.")
+            return Transcript([], segments, backend.label)
         finally:
-            for path in (wav_path, output_srt):
+            for path in (output, srt):
                 try:
                     path.unlink(missing_ok=True)
                 except OSError:

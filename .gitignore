@@ -11,3 +11,4 @@ build/
 models/
 .DS_Store
 Thumbs.db
+/runtime
