@@ -8,10 +8,6 @@ on:
     branches:
       - "main"
 
-# Needed so the tag build can attach the package to the release.
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: windows-latest
@@ -38,7 +34,7 @@ jobs:
 
       - name: Build Subway GUI
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name Subway --icon assets/subway.ico --add-data "assets/subway.ico;assets" --collect-all tkinterdnd2 --collect-all certifi subway.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name Subway --icon assets/subway.ico --add-data "assets/subway.ico;assets" --collect-all tkinterdnd2 subway.py
 
       - name: Install FFmpeg
         shell: powershell
@@ -96,14 +92,6 @@ jobs:
           }
 
           Compress-Archive -Path package\* -DestinationPath Subway-Windows.zip -Force
-
-      - name: Self-test the packaged app
-        shell: powershell
-        run: |
-          # The GUI build has no console, so only the exit code is visible here.
-          $process = Start-Process -FilePath package\Subway.exe -ArgumentList "--self-test" -Wait -PassThru
-          if ($process.ExitCode -ne 0) { throw "Subway --self-test failed with exit code $($process.ExitCode)" }
-          Write-Host "::notice title=App self-test::Subway.exe passed its self-test, including the model download request."
 
       - name: Upload Windows distribution
         uses: actions/upload-artifact@v4

@@ -64,3 +64,34 @@ def test_unreachable_host_is_reported_clearly(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError) as error:
         manager.download(get_model("parakeet-tdt-v3"))
     assert "huggingface.co" in str(error.value) and "CERTIFICATE_VERIFY_FAILED" in str(error.value)
+
+
+def test_self_test_writes_a_report_without_a_console(monkeypatch, tmp_path):
+    """A windowed build has no stdout; the report must still be produced."""
+    import app.selftest as selftest
+
+    monkeypatch.setattr("sys.stdout", None)
+    monkeypatch.setattr(selftest, "_certificates", lambda: "fine")
+    monkeypatch.setattr(selftest, "_model_download", lambda: "fine")
+    monkeypatch.setattr(selftest, "_bundled_certificates", lambda: "fine")
+    monkeypatch.setattr(selftest, "_runtimes", lambda: "fine")
+    monkeypatch.setattr(selftest, "_ffmpeg", lambda: "fine")
+    monkeypatch.setattr(selftest, "_folders", lambda: "fine")
+    log = tmp_path / "self-test.log"
+    assert selftest.main(str(log)) == 0
+    text = log.read_text(encoding="utf-8")
+    assert text.count("ok    ") == 6 and text.rstrip().endswith("self-test passed")
+
+
+def test_self_test_reports_failure(monkeypatch, tmp_path):
+    import app.selftest as selftest
+
+    def boom():
+        raise RuntimeError("no certificates")
+
+    monkeypatch.setattr(selftest, "_certificates", boom)
+    for name in ("_model_download", "_bundled_certificates", "_runtimes", "_ffmpeg", "_folders"):
+        monkeypatch.setattr(selftest, name, lambda: "fine")
+    log = tmp_path / "self-test.log"
+    assert selftest.main(str(log)) == 1
+    assert "FAIL  certificates: RuntimeError: no certificates" in log.read_text(encoding="utf-8")
