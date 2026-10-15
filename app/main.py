@@ -20,6 +20,7 @@ from app.config import AppSettings, load_settings, save_settings
 from app.i18n import UI_LANGUAGES, translate as tr
 from app.languages import LANGUAGES, language_name
 from app.media import MEDIA_EXTENSIONS
+from app.net import urlopen
 from app.pipeline import CANCELLED, DONE, FAILED, QUEUED, RUNNING, Job, Pipeline
 from app.process import CancelToken, Cancelled
 from app.settings import load_api_key
@@ -710,7 +711,7 @@ class SubwayApp(*_Base):  # type: ignore[misc]
             try:
                 request = urllib.request.Request(LATEST_RELEASE_URL, headers={
                     "Accept": "application/vnd.github+json", "User-Agent": "Subway-Update-Checker"})
-                with urllib.request.urlopen(request, timeout=10) as response:
+                with urlopen(request, timeout=10) as response:
                     release = json.loads(response.read().decode("utf-8"))
                 tag = str(release.get("tag_name", "")).strip()
                 url = release.get("html_url") or f"{REPOSITORY_URL}/releases"

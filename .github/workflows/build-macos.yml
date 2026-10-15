@@ -46,7 +46,7 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           pyinstaller --noconfirm --clean --windowed --name Subway \
             --icon assets/subway.ico --add-data "assets/subway.ico:assets" \
-            --collect-all tkinterdnd2 \
+            --collect-all tkinterdnd2 --collect-all certifi \
             --osx-bundle-identifier com.maxud1980.subway \
             subway.py
           PLIST="$APP/Contents/Info.plist"
@@ -89,6 +89,13 @@ jobs:
         run: |
           codesign --force --deep --sign - "$APP"
           codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Self-test the packaged app
+        run: |
+          # Runs inside the bundle: certificates, a real range request to
+          # huggingface.co, the speech runtime, FFmpeg and the user folders.
+          "$APP/Contents/MacOS/Subway" --self-test | tee self-test.log
+          echo "::notice title=App self-test::$(grep -c '^ok' self-test.log) checks passed inside Subway.app, including the model download request."
 
       - name: Check the packaged runtime
         run: python .github/scripts/smoke_runtime.py "$APP/Contents/Resources/runtime" burned-frame.png

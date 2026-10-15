@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from app.net import urlopen
 from app.paths import models_live_in_app_folder, runtime_dir, user_models_dir
 from app.process import CancelToken, Cancelled
 
@@ -145,7 +147,19 @@ class ModelManager:
             if received:
                 headers["Range"] = f"bytes={received}-"
             request = urllib.request.Request(model.url, headers=headers)
-            with urllib.request.urlopen(request, timeout=60) as response:
+            try:
+                response = urlopen(request, timeout=60)
+            except urllib.error.HTTPError as exc:
+                raise RuntimeError(
+                    f"huggingface.co refused the download ({exc.code} {exc.reason}). "
+                    "The model may have moved; check for a Subway update."
+                ) from exc
+            except urllib.error.URLError as exc:
+                raise RuntimeError(
+                    f"Could not reach huggingface.co: {exc.reason}. "
+                    "Check your internet connection, VPN or firewall and try again."
+                ) from exc
+            with response:
                 if received and response.status != 206:
                     # Server ignored the range request: start over.
                     digest = hashlib.sha256()
