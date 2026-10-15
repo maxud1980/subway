@@ -104,11 +104,20 @@ jobs:
           # The GUI build has no console, so the app writes its report to a file.
           $exe = Join-Path $PWD "package\Subway.exe"
           $log = Join-Path $PWD "self-test.log"
-          $process = Start-Process -FilePath $exe -ArgumentList "--self-test","--log",$log -Wait -PassThru
-          if (Test-Path $log) { Get-Content $log } else { Write-Host "no self-test report was written" }
-          if ($process.ExitCode -ne 0) { throw "Subway --self-test failed with exit code $($process.ExitCode)" }
-          $certs = (Select-String -Path $log -Pattern "bundled certificates").Line
-          Write-Host "::notice title=App self-test::Subway.exe passed its self-test. $certs"
+          $out = Join-Path $PWD "self-test.out"
+          $process = Start-Process -FilePath $exe -ArgumentList "--self-test","--log",$log `
+            -Wait -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+          $report = if (Test-Path $log) { Get-Content $log } else { @() }
+          if (-not $report) { $report = Get-Content $out -ErrorAction SilentlyContinue }
+          if (-not $report) { $report = Get-Content "$out.err" -ErrorAction SilentlyContinue }
+          $report | ForEach-Object { Write-Host $_ }
+          $joined = ($report -join " | ")
+          if (-not $joined) { $joined = "no report was produced" }
+          if ($process.ExitCode -ne 0) {
+            Write-Host "::error title=App self-test (exit $($process.ExitCode))::$joined"
+            throw "Subway --self-test failed with exit code $($process.ExitCode)"
+          }
+          Write-Host "::notice title=App self-test::$joined"
 
       - name: Upload Windows distribution
         uses: actions/upload-artifact@v4
