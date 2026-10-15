@@ -7,6 +7,7 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Callable
 
+from app.net import urlopen
 from app.process import CancelToken, Cancelled
 
 
@@ -133,7 +134,7 @@ class Translator:
                 headers={"Content-Type": "application/json", **headers}, method="POST",
             )
             try:
-                with urllib.request.urlopen(request, timeout=180) as response:
+                with urlopen(request, timeout=180) as response:
                     return json.loads(response.read().decode("utf-8"))
             except urllib.error.HTTPError as exc:
                 details = exc.read().decode("utf-8", errors="replace")

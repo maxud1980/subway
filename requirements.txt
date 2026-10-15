@@ -1,5 +1,6 @@
 customtkinter
 Pillow
 tkinterdnd2
+certifi
 
-# The speech runtime (NeMo-Speech.cpp) and FFmpeg are downloaded by the Windows release workflow.
+# The speech runtime (NeMo-Speech.cpp) and FFmpeg are downloaded by the release workflows.
