@@ -1,6 +1,6 @@
 # Subway v0.2.0
 
-**Subway is a local subtitle generator for Windows.** Create subtitles from video and audio files without uploading your media to a server.
+**Subway is a local subtitle generator for Windows and macOS.** Create subtitles from video and audio files without uploading your media to a server.
 
 <img width="1238" alt="Subway application screenshot" src="https://github.com/user-attachments/assets/a9da5201-3194-4e8b-9483-66959ed8a417" />
 
@@ -9,13 +9,13 @@
 - **Local speech recognition** with NVIDIA's NeMo-Speech.cpp runtime:
   - **Parakeet TDT v3** — 25 European languages, including Ukrainian and Russian.
   - **Nemotron 3.5 ASR** — 40 languages with automatic language detection.
-- **Runs on any PC.** Subway picks the best device automatically: an NVIDIA card (CUDA), another graphics card (Vulkan) or the processor.
+- **Runs on any computer.** Subway picks the best device automatically: an NVIDIA card (CUDA) or another graphics card (Vulkan) on Windows, Apple graphics (Metal) on Apple Silicon Macs, or the processor.
 - **A queue of files.** Drag and drop several videos, press Start and come back when they are done. Files added while the queue runs are processed too.
 - **Readable subtitles.** Lines are cut at sentences, clauses and pauses using word timings, with limits for line length, number of lines, time on screen and reading speed.
 - **Translation into several languages at once** through the Gemini API, with context from the previous lines and your own glossary (names, places, terms).
 - **Output formats:** SRT, WebVTT, ASS, a plain-text transcript with time marks, and an MP4 with subtitles burned into the picture.
 - **Built-in editor** to fix text and timing and listen to any line.
-- **Encrypted API key storage** on Windows using DPAPI.
+- **Secure API key storage:** DPAPI on Windows, the Keychain on macOS.
 - Interface in English, Ukrainian, German, French and Spanish.
 
 ## How it works
@@ -28,6 +28,8 @@ Existing files are never overwritten unless you allow it in Settings: Subway cre
 
 ## Download and run
 
+### Windows
+
 1. Download `Subway-Windows.zip` from the Assets section of the latest release.
 2. Extract the ZIP archive to a folder.
 3. Run `Subway.exe`.
@@ -35,6 +37,15 @@ Existing files are never overwritten unless you allow it in Settings: Subway cre
 5. Optionally enter a Gemini API key in Settings to translate subtitles.
 
 The Windows package includes the application, three builds of the NeMo-Speech runtime (CUDA, Vulkan, CPU) and FFmpeg. Speech models are downloaded separately.
+
+### macOS
+
+1. Download `Subway-macOS-arm64.dmg` for Apple Silicon (M1 and newer) or `Subway-macOS-x86_64.dmg` for Intel Macs.
+2. Open the DMG and drag Subway to Applications.
+3. The app is not notarized by Apple, so the first launch is blocked. Open **System Settings → Privacy & Security** and click **Open Anyway** next to the Subway message.
+4. Download a recognition model from within the application.
+
+On Apple Silicon recognition runs on the GPU through Metal. NeMo-Speech.cpp publishes only a CPU build for Intel Macs, so recognition there is noticeably slower. Settings and models are stored in `~/Library/Application Support/Subway`.
 
 ## Development
 
