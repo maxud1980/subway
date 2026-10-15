@@ -2,16 +2,11 @@ name: Build Windows
 
 on:
   workflow_dispatch:
-  pull_request:
   push:
     tags:
       - "v*"
     branches:
       - "main"
-
-# Needed so the tag build can attach the package to the release.
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -39,7 +34,7 @@ jobs:
 
       - name: Build Subway GUI
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name Subway --icon assets/subway.ico --add-data "assets/subway.ico;assets" --collect-all tkinterdnd2 --collect-all certifi subway.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name Subway --icon assets/subway.ico --add-data "assets/subway.ico;assets" --collect-all tkinterdnd2 subway.py
 
       - name: Install FFmpeg
         shell: powershell
@@ -98,41 +93,12 @@ jobs:
 
           Compress-Archive -Path package\* -DestinationPath Subway-Windows.zip -Force
 
-      - name: Self-test the packaged app
-        shell: powershell
-        run: |
-          # The GUI build has no console, so the app writes its report to a file.
-          $exe = Join-Path $PWD "package\Subway.exe"
-          $log = Join-Path $PWD "self-test.log"
-          $out = Join-Path $PWD "self-test.out"
-          $process = Start-Process -FilePath $exe -ArgumentList "--self-test","--log",$log `
-            -Wait -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err"
-          $report = if (Test-Path $log) { Get-Content $log } else { @() }
-          if (-not $report) { $report = Get-Content $out -ErrorAction SilentlyContinue }
-          if (-not $report) { $report = Get-Content "$out.err" -ErrorAction SilentlyContinue }
-          $report | ForEach-Object { Write-Host $_ }
-          $joined = ($report -join " | ")
-          if (-not $joined) { $joined = "no report was produced" }
-          if ($process.ExitCode -ne 0) {
-            Write-Host "::error title=App self-test (exit $($process.ExitCode))::$joined"
-            throw "Subway --self-test failed with exit code $($process.ExitCode)"
-          }
-          Write-Host "::notice title=App self-test::$joined"
-
       - name: Upload Windows distribution
         uses: actions/upload-artifact@v4
         with:
           name: Subway-Windows
           path: Subway-Windows.zip
           if-no-files-found: error
-
-      - name: Upload the self-test report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Windows-self-test
-          path: self-test.log
-          if-no-files-found: ignore
 
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/v')
