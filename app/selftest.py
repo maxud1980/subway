@@ -10,6 +10,8 @@ import ssl
 import sys
 import urllib.request
 
+from pathlib import Path
+
 from app import net
 from app.media import find_ffmpeg
 from app.paths import config_dir, runtime_dir, user_models_dir
@@ -18,13 +20,29 @@ from app.transcription.engine import RuntimeSelector
 from app.transcription.models import MODELS
 
 
+_report: list[str] = []
+
+
+def _say(text: str) -> None:
+    """Collect a line, and print it when there is somewhere to print.
+
+    A windowed build has no console: sys.stdout is None there, so print()
+    raises. The report is written to a file instead.
+    """
+    _report.append(text)
+    try:
+        print(text, flush=True)
+    except Exception:
+        pass
+
+
 def _check(name: str, function) -> bool:
     try:
         detail = function()
     except Exception as exc:  # noqa: BLE001 - every failure is a result here
-        print(f"FAIL  {name}: {type(exc).__name__}: {exc}")
+        _say(f"FAIL  {name}: {type(exc).__name__}: {exc}")
         return False
-    print(f"ok    {name}: {detail}")
+    _say(f"ok    {name}: {detail}")
     return True
 
 
@@ -98,8 +116,9 @@ def _folders() -> str:
     return f"{config_dir()} is writable"
 
 
-def main() -> int:
-    print(f"Subway self-test on {sys.platform}")
+def main(log_path: str | None = None) -> int:
+    _report.clear()
+    _say(f"Subway self-test on {sys.platform}")
     results = [
         _check("certificates", _certificates),
         _check("model download", _model_download),
@@ -109,5 +128,11 @@ def main() -> int:
         _check("user folders", _folders),
     ]
     failed = results.count(False)
-    print("self-test failed" if failed else "self-test passed")
+    _say("self-test failed" if failed else "self-test passed")
+    if log_path:
+        try:
+            Path(log_path).write_text("\n".join(_report) + "\n", encoding="utf-8")
+        except OSError as exc:
+            _say(f"could not write {log_path}: {exc}")
+            return 1
     return 1 if failed else 0

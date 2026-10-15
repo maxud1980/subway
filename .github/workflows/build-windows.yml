@@ -100,10 +100,14 @@ jobs:
       - name: Self-test the packaged app
         shell: powershell
         run: |
-          # The GUI build has no console, so only the exit code is visible here.
-          $process = Start-Process -FilePath package\Subway.exe -ArgumentList "--self-test" -Wait -PassThru
+          # The GUI build has no console, so the app writes its report to a file.
+          $exe = Join-Path $PWD "package\Subway.exe"
+          $log = Join-Path $PWD "self-test.log"
+          $process = Start-Process -FilePath $exe -ArgumentList "--self-test","--log",$log -Wait -PassThru
+          if (Test-Path $log) { Get-Content $log } else { Write-Host "no self-test report was written" }
           if ($process.ExitCode -ne 0) { throw "Subway --self-test failed with exit code $($process.ExitCode)" }
-          Write-Host "::notice title=App self-test::Subway.exe passed its self-test, including the model download request."
+          $certs = (Select-String -Path $log -Pattern "bundled certificates").Line
+          Write-Host "::notice title=App self-test::Subway.exe passed its self-test. $certs"
 
       - name: Upload Windows distribution
         uses: actions/upload-artifact@v4
@@ -111,6 +115,14 @@ jobs:
           name: Subway-Windows
           path: Subway-Windows.zip
           if-no-files-found: error
+
+      - name: Upload the self-test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-self-test
+          path: self-test.log
+          if-no-files-found: ignore
 
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/v')
