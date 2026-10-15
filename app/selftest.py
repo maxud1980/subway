@@ -37,15 +37,35 @@ def _certificates() -> str:
     return f"{count} authorities from the {source}"
 
 
-def _model_download() -> str:
-    """Fetch the first kilobyte of the model file, the request that must work."""
+def _range_request(context: ssl.SSLContext) -> tuple[int, int]:
     model = MODELS[0]
     request = urllib.request.Request(model.url, headers={"User-Agent": "Subway/0.2", "Range": "bytes=0-1023"})
-    with net.urlopen(request, timeout=60) as response:
-        data = response.read(1024)
-    if len(data) < 1024:
-        raise RuntimeError(f"only {len(data)} bytes arrived")
-    return f"{len(data)} bytes from huggingface.co (HTTP {response.status})"
+    with urllib.request.urlopen(request, timeout=60, context=context) as response:
+        return len(response.read(1024)), response.status
+
+
+def _model_download() -> str:
+    """Fetch the first kilobyte of the model file, the request that must work."""
+    size, status = _range_request(net.ssl_context())
+    if size < 1024:
+        raise RuntimeError(f"only {size} bytes arrived")
+    return f"{size} bytes from huggingface.co (HTTP {status})"
+
+
+def _bundled_certificates() -> str:
+    """The path a user's computer takes: verify through the bundled certifi file.
+
+    The build machine has its own trust store, so the check above can pass
+    there while failing everywhere else. This one fails unless the bundle
+    that ships inside the app really works.
+    """
+    bundle = net._certifi_bundle()
+    if not bundle:
+        raise RuntimeError("no certifi bundle is packaged with the app")
+    size, status = _range_request(ssl.create_default_context(cafile=bundle))
+    if size < 1024:
+        raise RuntimeError(f"only {size} bytes arrived through the bundled certificates")
+    return f"{bundle} verified huggingface.co ({size} bytes, HTTP {status})"
 
 
 def _runtimes() -> str:
@@ -83,6 +103,7 @@ def main() -> int:
     results = [
         _check("certificates", _certificates),
         _check("model download", _model_download),
+        _check("bundled certificates", _bundled_certificates),
         _check("speech runtime", _runtimes),
         _check("ffmpeg", _ffmpeg),
         _check("user folders", _folders),

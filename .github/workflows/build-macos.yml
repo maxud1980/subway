@@ -95,7 +95,7 @@ jobs:
           # Runs inside the bundle: certificates, a real range request to
           # huggingface.co, the speech runtime, FFmpeg and the user folders.
           "$APP/Contents/MacOS/Subway" --self-test | tee self-test.log
-          echo "::notice title=App self-test::$(grep -c '^ok' self-test.log) checks passed inside Subway.app, including the model download request."
+          echo "::notice title=App self-test::$(grep -c '^ok' self-test.log) checks passed inside Subway.app. $(grep 'certificates:' self-test.log | tr '\n' ' ')"
 
       - name: Check the packaged runtime
         run: python .github/scripts/smoke_runtime.py "$APP/Contents/Resources/runtime" burned-frame.png
@@ -149,6 +149,7 @@ jobs:
           path: |
             screenshot.png
             burned-frame.png
+            self-test.log
           if-no-files-found: ignore
 
       - name: Upload release asset
