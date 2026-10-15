@@ -1,6 +1,6 @@
 # Subway v0.2.0
 
-**Subway is a local subtitle generator for Windows and macOS.** Create subtitles from video and audio files without uploading your media to a server.
+**Subway is a local subtitle generator for Windows and macOS (Apple Silicon).** Create subtitles from video and audio files without uploading your media to a server.
 
 <img width="1238" alt="Subway application screenshot" src="https://github.com/user-attachments/assets/a9da5201-3194-4e8b-9483-66959ed8a417" />
 
@@ -38,14 +38,14 @@ Existing files are never overwritten unless you allow it in Settings: Subway cre
 
 The Windows package includes the application, three builds of the NeMo-Speech runtime (CUDA, Vulkan, CPU) and FFmpeg. Speech models are downloaded separately.
 
-### macOS
+### macOS (Apple Silicon)
 
-1. Download `Subway-macOS-arm64.dmg` for Apple Silicon (M1 and newer) or `Subway-macOS-x86_64.dmg` for Intel Macs.
+1. Download `Subway-macOS-AppleSilicon.dmg` from the Assets section of the latest release.
 2. Open the DMG and drag Subway to Applications.
 3. The app is not notarized by Apple, so the first launch is blocked. Open **System Settings → Privacy & Security** and click **Open Anyway** next to the Subway message.
 4. Download a recognition model from within the application.
 
-On Apple Silicon recognition runs on the GPU through Metal. NeMo-Speech.cpp publishes only a CPU build for Intel Macs, so recognition there is noticeably slower. Settings and models are stored in `~/Library/Application Support/Subway`.
+Requires macOS 11 or newer on an Apple Silicon Mac (M1 and later); recognition runs on the GPU through Metal. Settings and models are stored in `~/Library/Application Support/Subway`.
 
 ## Development
 
