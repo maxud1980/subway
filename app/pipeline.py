@@ -10,14 +10,14 @@ from typing import Callable
 
 from app import media
 from app.config import AppSettings
-from app.languages import language_code
+from app.languages import language_code, language_name
 from app.process import CancelToken, Cancelled
 from app.subtitles import formats
 from app.subtitles.formatter import rewrap_subtitles, segments_to_subtitles, words_to_subtitles
 from app.subtitles.srt import read_srt
 from app.subtitles.types import Subtitle
 from app.transcription.engine import NemoSpeechEngine
-from app.transcription.models import ModelManager, get_model
+from app.transcription.models import ModelManager
 
 QUEUED, RUNNING, DONE, FAILED, CANCELLED = "queued", "running", "done", "failed", "cancelled"
 _ids = itertools.count(1)
@@ -248,9 +248,13 @@ class Pipeline:
 
     def recognize(self, job: Job, plan: Plan, params, progress) -> list[Subtitle]:
         s = self.settings
-        model = get_model(s.model_id)
-        if not self.models.is_downloaded(model):
-            raise RuntimeError(f"Download the recognition model first: {model.name}")
+        model = self.models.installed(s.model_id)
+        if model is None:
+            raise RuntimeError(f"Download the recognition model first: {self.models.get(s.model_id).name}")
+        language = language_code(s.recognition_language) if s.recognition_language != "auto" else "auto"
+        if language != "auto" and not model.recognizes_language(language):
+            raise RuntimeError(f"{model.name} does not recognize {language_name(language)}. "
+                               "Choose another recognition model.")
         ffmpeg = media.find_ffmpeg(self.runtime_dir)
         with tempfile.TemporaryDirectory(dir=media.temp_dir()) as tmp:
             wav = Path(tmp) / "audio.wav"
@@ -263,7 +267,7 @@ class Pipeline:
             phrases = s.glossary_phrases() if s.boost_glossary_in_recognition else []
             transcript = self.engine.transcribe(
                 wav, model, self.models.path_for(model),
-                language=language_code(s.recognition_language) if s.recognition_language != "auto" else "auto",
+                language=language,
                 device=s.device, phrases=phrases, duration=info.duration,
                 cancel=self.cancel, progress=lambda f: progress(None if f is None else 0.1 + 0.9 * f), log=self.log,
             )

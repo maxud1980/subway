@@ -18,13 +18,14 @@ from PIL import Image
 from app import theme as T
 from app.config import AppSettings, load_settings, save_settings
 from app.i18n import UI_LANGUAGES, translate as tr
-from app.languages import LANGUAGES, language_name
+from app.languages import LANGUAGES, language_code, names_for
 from app.media import MEDIA_EXTENSIONS
 from app.net import urlopen
 from app.pipeline import CANCELLED, DONE, FAILED, QUEUED, RUNNING, Job, Pipeline
 from app.process import CancelToken, Cancelled
 from app.settings import load_api_key
-from app.transcription.models import ModelManager, get_model
+from app.transcription import catalog
+from app.transcription.models import ModelInfo, ModelManager
 
 try:  # Drag and drop is optional: the app still works without it.
     from tkinterdnd2 import DND_FILES, TkinterDnD
@@ -96,6 +97,7 @@ class SubwayApp(*_Base):  # type: ignore[misc]
         if self.settings.ui_language not in UI_LANGUAGES:
             self.settings.ui_language = "English"
         self.model_manager = ModelManager()
+        self._apply_catalog(catalog.load_cached(), quiet=True)
         self.jobs: list[Job] = []
         self.rows: dict[int, JobRow] = {}
         self.pipeline: Pipeline | None = None
@@ -173,8 +175,7 @@ class SubwayApp(*_Base):  # type: ignore[misc]
         self.update_link = ctk.CTkButton(header, text="", fg_color="transparent", hover_color=T.RAISED,
                                          text_color=T.WARNING, command=self._open_update, width=10)
         self.update_link.grid(row=0, column=2, rowspan=2, padx=8)
-        if self.update_info:
-            self.update_link.configure(text=f"{self.t('Update available')}: {self.update_info[0]}")
+        self._refresh_update_link()
         ctk.CTkButton(header, text=self.t("Settings"), width=120, height=36, fg_color=T.RAISED,
                       hover_color=T.LINE, command=self.open_settings).grid(row=0, column=3, rowspan=2)
 
@@ -253,7 +254,7 @@ class SubwayApp(*_Base):  # type: ignore[misc]
         models = self.model_manager.available_models()
         self.model_menu = ctk.CTkOptionMenu(body, values=[m.name for m in models], command=self._model_changed,
                                             height=34, fg_color=T.RAISED, button_color=T.LINE, button_hover_color=T.ACCENT)
-        self.model_menu.set(get_model(s.model_id).name)
+        self.model_menu.set(self.model_manager.get(s.model_id).name)
         self.model_menu.grid(row=0, column=0, columnspan=2, sticky="ew")
         self.model_status = ctk.CTkLabel(body, text="", text_color=T.MUTED, font=self.font(12), wraplength=330, justify="left")
         self.model_status.grid(row=1, column=0, columnspan=2, pady=(6, 2), sticky="w")
@@ -262,10 +263,13 @@ class SubwayApp(*_Base):  # type: ignore[misc]
         self.download_button = ctk.CTkButton(body, text=self.t("Download model"), height=32, command=self.download_model)
         self.download_button.grid(row=3, column=0, columnspan=2, pady=(4, 2), sticky="ew")
         ctk.CTkLabel(body, text=self.t("Spoken language"), text_color=T.TEXT).grid(row=4, column=0, pady=(10, 0), sticky="w")
-        self.lang_menu = ctk.CTkComboBox(body, values=[], command=self._recognition_language_changed, width=190)
+        self.lang_menu = ctk.CTkComboBox(body, values=[], command=self._recognition_language_changed, width=190,
+                                         state="readonly")
         self.lang_menu.grid(row=4, column=1, pady=(10, 0), sticky="e")
         self.lang_hint = ctk.CTkLabel(body, text="", text_color=T.MUTED, font=self.font(12), wraplength=330, justify="left")
         self.lang_hint.grid(row=5, column=0, columnspan=2, sticky="w")
+        self.lang_switch = ctk.CTkButton(body, text="", height=30, fg_color=T.RAISED, hover_color=T.LINE,
+                                         command=self._switch_to_supporting_model)
 
         # Translation
         body = self._section(scroll, 3, self.t("Translation"), self.t("Only subtitle text is sent to Gemini."))
@@ -351,32 +355,60 @@ class SubwayApp(*_Base):  # type: ignore[misc]
         self._refresh_model_status()
         self._refresh_language_menu()
 
-    def _language_choices(self) -> list[str]:
-        model = get_model(self.settings.model_id)
-        names = []
-        for code in model.language_codes:
-            name = language_name(code.split("-")[0])
-            if name in LANGUAGES and name not in names:
-                names.append(name)
-        return sorted(names)
-
     def _refresh_language_menu(self) -> None:
-        model = get_model(self.settings.model_id)
+        # Every language is listed, so a language the model does not know can be caught before recognition.
         auto = self.t("Detect automatically")
-        if model.supports_language:
-            self.lang_menu.configure(values=[auto] + self._language_choices(), state="normal")
-            current = self.settings.recognition_language
-            self.lang_menu.set(current if current in self._language_choices() else auto)
-            self.lang_hint.configure(text=self.t("Choosing the language improves accuracy."))
-        else:
-            self.lang_menu.configure(values=[auto])
-            self.lang_menu.set(auto)
-            self.lang_menu.configure(state="disabled")
-            self.lang_hint.configure(text=self.t("This model detects the language by itself."))
+        self.lang_menu.configure(values=[auto] + sorted(LANGUAGES))
+        current = self.settings.recognition_language
+        self.lang_menu.set(current if current in LANGUAGES else auto)
+        self._refresh_language_hint()
 
     def _recognition_language_changed(self, value: str) -> None:
         self.settings.recognition_language = value if value in LANGUAGES else "auto"
         self.save()
+        self._refresh_language_hint()
+
+    def _unsupported_language_text(self, model: ModelInfo, language: str) -> str:
+        return self.t("{model} does not recognize {language}. The subtitles would be meaningless.").format(
+            model=model.name, language=language)
+
+    def _model_for_language(self, language: str) -> ModelInfo | None:
+        """A model that recognizes the language, preferring one that is already downloaded."""
+        code = language_code(language)
+        models = [m for m in self.model_manager.available_models() if m.recognizes_language(code)]
+        return next((m for m in models if self.model_manager.installed(m.id)), models[0] if models else None)
+
+    def _refresh_language_hint(self) -> None:
+        if not hasattr(self, "lang_hint"):
+            return
+        model = self.model_manager.get(self.settings.model_id)
+        language = self.settings.recognition_language
+        self.lang_switch.grid_remove()
+        if language not in LANGUAGES:
+            known = ", ".join(names_for(model.recognized_languages))
+            text = f"{self.t('This model recognizes only')}: {known}. {self.t('Choose the spoken language so Subway can check it.')}"
+            color = T.MUTED
+        elif model.recognizes_language(language_code(language)):
+            text = "✓ " + (self.t("Choosing the language improves accuracy.") if model.supports_language
+                           else self.t("Supported. This model detects the language by itself."))
+            color = T.SUCCESS
+        else:
+            text = "✕ " + self._unsupported_language_text(model, language)
+            alternative = self._model_for_language(language)
+            if alternative:
+                self.lang_switch.configure(text=self.t("Switch to {model}").format(model=alternative.name))
+                self.lang_switch.grid(row=6, column=0, columnspan=2, pady=(4, 0), sticky="ew")
+            else:
+                text += " " + self.t("No available model recognizes this language.")
+            color = T.DANGER
+        self.lang_hint.configure(text=text, text_color=color)
+
+    def _switch_to_supporting_model(self) -> None:
+        model = self._model_for_language(self.settings.recognition_language)
+        if model is None or self.busy or self.download_cancel is not None:
+            return
+        self.model_menu.set(model.name)
+        self._model_changed(model.name)
 
     def _translation_toggled(self, save: bool = True) -> None:
         self.settings.translate = bool(self.translate_var.get())
@@ -456,14 +488,22 @@ class SubwayApp(*_Base):  # type: ignore[misc]
 
     # --------------------------------------------------------------- models
     def _refresh_model_status(self) -> None:
-        model = get_model(self.settings.model_id)
+        model = self.model_manager.get(self.settings.model_id)
         downloading = self.download_cancel is not None
         if downloading:
             return
         self.model_progress.grid_remove()
-        if self.model_manager.is_downloaded(model):
+        installed = self.model_manager.installed(model.id)
+        if installed == model:
             self.model_status.configure(text=f"✓ {self.t('Model ready')} · {model.size_mb} MB · {self.t(model.languages)}", text_color=T.SUCCESS)
             self.download_button.grid_remove()
+        elif installed is not None:
+            version = f" ({model.version})" if model.version else ""
+            notes = f"\n{model.notes}" if model.notes else ""
+            self.model_status.configure(text=f"✓ {self.t('Model ready')} · {self.t('a newer version is available')}{version}{notes}",
+                                        text_color=T.WARNING)
+            self.download_button.configure(text=f"{self.t('Update model')} · {model.size_mb} MB", state="normal", fg_color=T.ACCENT)
+            self.download_button.grid()
         else:
             self.model_status.configure(text=f"{self.t('Not downloaded')} · {model.size_mb} MB · {self.t(model.languages)}", text_color=T.MUTED)
             self.download_button.configure(text=self.t("Download model"), state="normal", fg_color=T.ACCENT)
@@ -474,7 +514,7 @@ class SubwayApp(*_Base):  # type: ignore[misc]
             self.download_cancel.cancel()
             self.download_button.configure(state="disabled")
             return
-        model = get_model(self.settings.model_id)
+        model = self.model_manager.get(self.settings.model_id)
         self.download_cancel = CancelToken()
         self.model_menu.configure(state="disabled")
         self.download_button.configure(text=self.t("Cancel download"), fg_color=T.RAISED)
@@ -487,11 +527,11 @@ class SubwayApp(*_Base):  # type: ignore[misc]
             try:
                 path = self.model_manager.download(
                     model, progress=lambda got, total: self.after(0, self._download_progress, got, total), cancel=token)
-                self.after(0, self._download_finished, None, path)
+                self.after(0, self._download_finished, None, path, model)
             except Cancelled:
-                self.after(0, self._download_finished, "cancelled", None)
+                self.after(0, self._download_finished, "cancelled", None, model)
             except Exception as exc:  # noqa: BLE001
-                self.after(0, self._download_finished, str(exc), None)
+                self.after(0, self._download_finished, str(exc), None, model)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -501,11 +541,17 @@ class SubwayApp(*_Base):  # type: ignore[misc]
             self.model_status.configure(text=f"{self.t('Downloading…')} {received / 1048576:.0f} / {total / 1048576:.0f} MB",
                                         text_color=T.MUTED)
 
-    def _download_finished(self, error: str | None, path: Path | None) -> None:
+    def _download_finished(self, error: str | None, path: Path | None, model: ModelInfo) -> None:
         self.download_cancel = None
         self.model_menu.configure(state="normal")
         if path:
             self.log(f"Model saved: {path}")
+            older = self.model_manager.older_size(model.id)
+            question = self.t("The new version is ready. Delete the previous version to free {size} MB?").format(
+                size=round(older / 1048576))
+            if older and messagebox.askyesno(APP_NAME, question, parent=self):
+                self.model_manager.remove_older(model.id)
+            self._refresh_update_link()
         elif error == "cancelled":
             self.log("Model download cancelled. It will resume next time.")
         elif error:
@@ -612,8 +658,18 @@ class SubwayApp(*_Base):  # type: ignore[misc]
             return
         s = self.settings
         needs_model = any(not j.is_srt for j in jobs)
-        model = get_model(s.model_id)
-        if needs_model and not self.model_manager.is_downloaded(model):
+        model = self.model_manager.installed(s.model_id) or self.model_manager.get(s.model_id)
+        if needs_model and s.recognition_language in LANGUAGES and not model.recognizes_language(language_code(s.recognition_language)):
+            message = self._unsupported_language_text(model, s.recognition_language)
+            alternative = self._model_for_language(s.recognition_language)
+            if alternative is None:
+                messagebox.showerror(APP_NAME, f"{message}\n\n{self.t('No available model recognizes this language.')}", parent=self)
+            else:
+                switch = self.t("Switch to {model}").format(model=alternative.name)
+                if messagebox.askyesno(APP_NAME, f"{message}\n\n{switch}?", parent=self):
+                    self._switch_to_supporting_model()
+            return
+        if needs_model and self.model_manager.installed(s.model_id) is None:
             messagebox.showwarning(APP_NAME, self.t("Download the selected recognition model first."), parent=self)
             return
         if any(j.is_srt for j in jobs) and not s.translate:
@@ -707,6 +763,8 @@ class SubwayApp(*_Base):  # type: ignore[misc]
 
     # -------------------------------------------------------------- updates
     def check_for_updates(self, silent: bool = False, callback=None) -> None:
+        self.check_models()
+
         def worker():
             try:
                 request = urllib.request.Request(LATEST_RELEASE_URL, headers={
@@ -726,14 +784,67 @@ class SubwayApp(*_Base):  # type: ignore[misc]
     def _update_result(self, tag: str, url: str, newer: bool, error: str | None, callback) -> None:
         if newer:
             self.update_info = (tag, url)
-            if self.update_link.winfo_exists():
-                self.update_link.configure(text=f"{self.t('Update available')}: {tag}")
+            self._refresh_update_link()
         if callback:
             callback(tag, newer, error)
+
+    def check_models(self) -> None:
+        """Look for new versions of the recognition models in the online catalog."""
+        def worker():
+            try:
+                models = catalog.fetch()
+            except Exception as exc:  # noqa: BLE001
+                self.log_threadsafe(f"The model list could not be checked: {exc}")
+                return
+            self.after(0, self._apply_catalog, models)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_catalog(self, models: list[ModelInfo], quiet: bool = False) -> None:
+        current = version_tuple(APP_VERSION)
+        usable = []
+        for model in models:
+            if version_tuple(model.min_app_version or "0") <= current:
+                usable.append(model)
+            elif not quiet:
+                self.log(f"{model.name} {model.version} needs Subway {model.min_app_version} or newer. Update Subway to use it.")
+        added = self.model_manager.add_versions(usable)
+        if not added or not hasattr(self, "model_menu"):
+            return
+        if not quiet:
+            for model in added:
+                self.log(f"New recognition model available: {model.name} {model.version}".rstrip())
+        if self.download_cancel is None:
+            self.model_menu.configure(values=[m.name for m in self.model_manager.available_models()])
+            self.model_menu.set(self.model_manager.get(self.settings.model_id).name)
+            self._refresh_model_status()
+        self._refresh_language_hint()
+        self._refresh_update_link()
+
+    def _model_with_update(self) -> ModelInfo | None:
+        return next((m for m in self.model_manager.available_models() if self.model_manager.update_available(m.id)), None)
+
+    def _refresh_update_link(self) -> None:
+        if not hasattr(self, "update_link") or not self.update_link.winfo_exists():
+            return
+        model = self._model_with_update()
+        if self.update_info:
+            text = f"{self.t('Update available')}: {self.update_info[0]}"
+        elif model:
+            text = f"{self.t('Model update available')}: {model.name}"
+        else:
+            text = ""
+        self.update_link.configure(text=text)
 
     def _open_update(self) -> None:
         if self.update_info:
             webbrowser.open(self.update_info[1])
+            return
+        model = self._model_with_update()
+        if model and not self.busy and self.download_cancel is None:
+            # Select the model: its status line then offers the update.
+            self.model_menu.set(model.name)
+            self._model_changed(model.name)
 
     def _on_close(self) -> None:
         if self.busy:

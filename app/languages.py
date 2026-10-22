@@ -13,7 +13,7 @@ LANGUAGES = {
     'Italian': 'it', 'Japanese': 'ja', 'Javanese': 'jv', 'Kannada': 'kn',
     'Kazakh': 'kk', 'Khmer': 'km', 'Kinyarwanda': 'rw', 'Korean': 'ko',
     'Lao': 'lo', 'Latvian': 'lv', 'Lithuanian': 'lt', 'Macedonian': 'mk',
-    'Malay': 'ms', 'Malayalam': 'ml', 'Marathi': 'mr', 'Mongolian': 'mn',
+    'Malay': 'ms', 'Malayalam': 'ml', 'Maltese': 'mt', 'Marathi': 'mr', 'Mongolian': 'mn',
     'Nepali': 'ne', 'Norwegian': 'no', 'Persian': 'fa', 'Polish': 'pl',
     'Portuguese (Brazil)': 'pt-BR', 'Portuguese (Portugal)': 'pt-PT', 'Punjabi': 'pa',
     'Romanian': 'ro', 'Russian': 'ru', 'Serbian': 'sr', 'Sindhi': 'sd',
@@ -28,8 +28,24 @@ def language_code(name: str) -> str:
     return LANGUAGES.get(name, name.lower().replace(" ", "-")[:12] or "xx")
 
 
+# Codes that name the same language differently ("nb-NO" is Norwegian Bokmål, listed as "no").
+_ALIASES = {"nb": "no", "nn": "no", "iw": "he", "in": "id", "tl": "fil"}
+
+
+def base_language(code: str) -> str:
+    """'uk-UA' → 'uk', 'zh-Hans' → 'zh', 'nb-NO' → 'no': the part that names the language."""
+    base = code.split("-")[0].lower()
+    return _ALIASES.get(base, base)
+
+
 def language_name(code: str) -> str:
     for name, value in LANGUAGES.items():
         if value.lower() == code.lower():
             return name
     return code
+
+
+def names_for(codes) -> list[str]:
+    """Language names for base codes: 'pt' gives both Portuguese variants."""
+    bases = {base_language(code) for code in codes}
+    return sorted(name for name, code in LANGUAGES.items() if base_language(code) in bases)
