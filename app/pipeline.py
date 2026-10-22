@@ -16,7 +16,7 @@ from app.subtitles import formats
 from app.subtitles.formatter import rewrap_subtitles, segments_to_subtitles, words_to_subtitles
 from app.subtitles.srt import read_srt
 from app.subtitles.types import Subtitle
-from app.transcription.engine import NemoSpeechEngine
+from app.transcription.engine import SpeechEngine
 from app.transcription.models import ModelManager
 
 QUEUED, RUNNING, DONE, FAILED, CANCELLED = "queued", "running", "done", "failed", "cancelled"
@@ -82,7 +82,7 @@ class Pipeline:
         runtime_dir: Path,
         notify: Callable[[Job], None],
         log: Callable[[str], None],
-        engine: NemoSpeechEngine | None = None,
+        engine: SpeechEngine | None = None,
         translator_factory=None,
         models: ModelManager | None = None,
     ):
@@ -92,7 +92,7 @@ class Pipeline:
         self.notify = notify
         self.log = log
         self.models = models or ModelManager(runtime_dir)
-        self.engine = engine or NemoSpeechEngine(runtime_dir)
+        self.engine = engine or SpeechEngine(runtime_dir, self.models)
         if translator_factory is None:
             from app.translation.translator import create_translator
             translator_factory = create_translator

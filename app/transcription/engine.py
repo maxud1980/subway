@@ -1,7 +1,8 @@
-"""Speech recognition through NVIDIA's native NeMo-Speech.cpp runtime."""
+"""Speech recognition through NVIDIA's NeMo-Speech.cpp runtime and whisper.cpp."""
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import threading
@@ -14,7 +15,7 @@ from app.process import CancelToken, run
 from app.subtitles.srt import read_srt
 from app.subtitles.types import Word
 
-from .models import ModelInfo
+from .models import WHISPER_VAD, ModelInfo, ModelManager
 
 
 @dataclass
@@ -277,3 +278,164 @@ class NemoSpeechEngine:
                     path.unlink(missing_ok=True)
                 except OSError:
                     pass
+
+
+# whisper.cpp builds shipped with Subway, best first. Vulkan also covers NVIDIA cards.
+WHISPER_VARIANTS = (
+    ("metal", "whisper-metal"),    # macOS: Apple Silicon GPU
+    ("vulkan", "whisper-vulkan"),  # Windows: any GPU with a Vulkan driver
+    ("cpu", "whisper-cpu"),
+)
+
+_SPECIAL_TOKEN = re.compile(r"^(?:\[_[^\]]*\]|<\|[^|]*\|>)$")
+_ANNOTATION = re.compile(r"^\s*(?:\[[^\]]*\]|\([^)]*\)|[♪♫\s]+)\s*$")
+
+
+def _whisper_binary(folder: Path) -> Path:
+    name = "whisper-cli.exe" if sys.platform == "win32" else "whisper-cli"
+    return folder / "bin" / name
+
+
+def _utf8(text: str) -> str:
+    """Undo surrogateescape: tokens can hold part of a character, whole words cannot."""
+    return text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+
+
+def parse_whisper(raw: bytes) -> tuple[list[Word], list[TranscriptSegment]]:
+    """Words and segments from whisper-cli's full JSON (-ojf).
+
+    Whisper splits text into byte-level tokens, so one token may end in the middle of a
+    UTF-8 character (Cyrillic, Arabic). The JSON is read with surrogateescape and the
+    bytes of a word are decoded only once the whole word is assembled.
+    """
+    data = json.loads(raw.decode("utf-8", "surrogateescape"), strict=False)
+    words: list[Word] = []
+    segments: list[TranscriptSegment] = []
+    for segment in data.get("transcription", []) if isinstance(data, dict) else []:
+        offsets = segment.get("offsets") or {}
+        start, end = _number(offsets.get("from")), _number(offsets.get("to"))
+        text = _utf8(str(segment.get("text", ""))).strip()
+        if start is None or end is None or not text or _ANNOTATION.match(text):
+            continue
+        segments.append(TranscriptSegment(text, start / 1000, end / 1000))
+        current: list[list] = []  # [text, start, end] per word
+        for token in segment.get("tokens", []):
+            if not isinstance(token, dict):
+                continue
+            piece, times = token.get("text", ""), token.get("offsets") or {}
+            t_start, t_end = _number(times.get("from")), _number(times.get("to"))
+            if not piece or _SPECIAL_TOKEN.match(piece) or t_start is None or t_end is None:
+                continue
+            if piece.startswith(" ") or not current:
+                current.append([piece, t_start, t_end])
+            else:
+                current[-1][0] += piece
+                current[-1][2] = t_end
+        for piece, t_start, t_end in current:
+            word = _utf8(piece).strip()
+            if word and not _ANNOTATION.match(word):
+                words.append(Word(word, t_start / 1000, max(t_end, t_start) / 1000))
+    return words, segments
+
+
+class WhisperEngine:
+    """Runs OpenAI's Whisper models through whisper.cpp's command-line tool."""
+
+    def __init__(self, runtime_dir: Path, models: ModelManager):
+        self.runtime_dir = runtime_dir
+        self.models = models
+
+    def installed(self) -> list[tuple[str, Path]]:
+        found = []
+        for variant, folder in WHISPER_VARIANTS:
+            binary = _whisper_binary(self.runtime_dir / folder)
+            if binary.exists():
+                found.append((variant, binary))
+        return found
+
+    def builds(self, device: str) -> list[tuple[str, Path, list[str]]]:
+        """Builds to try in order, with extra arguments. A GPU build falls back to the CPU."""
+        installed = self.installed()
+        if device == "cpu":
+            cpu = [(v, b, []) for v, b in installed if v == "cpu"]
+            return cpu or [(v, b, ["-ng"]) for v, b in installed]
+        gpu = [(v, b, []) for v, b in installed if v != "cpu"]
+        cpu = [(v, b, []) for v, b in installed if v == "cpu"]
+        if not cpu:
+            cpu = [(v, b, ["-ng"]) for v, b in installed[:1]]
+        return gpu + cpu
+
+    def transcribe(
+        self,
+        wav: Path,
+        model: ModelInfo,
+        model_path: Path,
+        language: str = "auto",
+        device: str = "auto",
+        phrases: list[str] | None = None,
+        duration: float = 0.0,
+        cancel: CancelToken | None = None,
+        progress: Callable[[float | None], None] | None = None,
+        log: Callable[[str], None] | None = None,
+    ) -> Transcript:
+        builds = self.builds(device)
+        if not builds:
+            raise RuntimeError(f"The Whisper runtime was not found in {self.runtime_dir}. "
+                               "Please reinstall Subway from the latest release.")
+        base = wav.with_name(wav.stem + ".whisper")
+        output = base.with_name(base.name + ".json")
+        threads = str(max(1, min(os.cpu_count() or 4, 8)))
+
+        def on_line(line: str) -> None:
+            match = _PERCENT.search(line)
+            if match and progress:
+                progress(min(float(match.group(1)) / 100, 1.0))
+
+        failure = ""
+        try:
+            for variant, binary, extra in builds:
+                command = [binary, "-m", model_path, "-f", wav, "-l", language_argument(model, language) or "auto",
+                           "-oj", "-ojf", "-of", base, "-pp", "-t", threads, "-sns",
+                           "--vad", "-vm", self.models.path_for(WHISPER_VAD), *extra]
+                if phrases:
+                    command += ["--prompt", ", ".join(phrases)]
+                label = "CPU" if variant == "cpu" or extra else variant.capitalize()
+                if log:
+                    log(f"Recognition device: {label} (whisper.cpp {variant} build)")
+                output.unlink(missing_ok=True)
+                try:
+                    code, text = run(command, cancel, on_line)
+                except RuntimeError as exc:  # The build could not start at all.
+                    code, text = -1, str(exc)
+                if cancel is not None:
+                    cancel.check()
+                if code == 0 and output.exists():
+                    words, segments = parse_whisper(output.read_bytes())
+                    if words and max(len(w.text) for w in words) <= 30:
+                        return Transcript(words, segments, label)
+                    if segments:
+                        if log:
+                            log("Word timings are unavailable; using Whisper's segments.")
+                        return Transcript([], segments, label)
+                    raise RuntimeError("No speech was recognized in this file.")
+                failure = "\n".join(text.splitlines()[-20:])
+                if log:
+                    log(f"The {variant} build of whisper.cpp failed (exit code {code}).")
+            raise RuntimeError(f"Speech recognition failed:\n{failure}")
+        finally:
+            try:
+                output.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+class SpeechEngine:
+    """Sends each model to the runtime that can run it."""
+
+    def __init__(self, runtime_dir: Path, models: ModelManager):
+        self.nemo = NemoSpeechEngine(runtime_dir)
+        self.whisper = WhisperEngine(runtime_dir, models)
+
+    def transcribe(self, wav: Path, model: ModelInfo, model_path: Path, **options) -> Transcript:
+        engine = self.whisper if model.engine == "whisper" else self.nemo
+        return engine.transcribe(wav, model, model_path, **options)

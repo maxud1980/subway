@@ -29,7 +29,7 @@ def language_code(name: str) -> str:
 
 
 # Codes that name the same language differently ("nb-NO" is Norwegian Bokmål, listed as "no").
-_ALIASES = {"nb": "no", "nn": "no", "iw": "he", "in": "id", "tl": "fil"}
+_ALIASES = {"nb": "no", "nn": "no", "iw": "he", "in": "id", "tl": "fil", "jw": "jv"}
 
 
 def base_language(code: str) -> str:

@@ -34,7 +34,7 @@ except Exception:  # pragma: no cover - depends on the platform build
     TkinterDnD = None
 
 APP_NAME = "Subway"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 REPOSITORY_URL = "https://github.com/maxud1980/subway"
 LATEST_RELEASE_URL = "https://api.github.com/repos/maxud1980/subway/releases/latest"
 GEMINI_MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash"]

@@ -20,6 +20,8 @@ CATALOG_URL = "https://raw.githubusercontent.com/maxud1980/subway/main/models.js
 _ID = re.compile(r"^[a-z0-9][a-z0-9.\-]{0,63}$")
 _REPO = re.compile(r"^[A-Za-z0-9][\w.\-]*/[\w.\-]+$")
 _FILENAME = re.compile(r"^[\w.\-]+\.gguf$")
+_WHISPER_FILENAME = re.compile(r"^[\w.\-]+\.(?:bin|gguf)$")
+_ENGINES = ("nemo", "whisper")
 _REVISION = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _CODE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,4})?$")
@@ -45,8 +47,10 @@ def parse_entry(entry) -> ModelInfo | None:
     repo, revision = _text(entry, "repo"), _text(entry, "revision")
     filename, sha256 = _text(entry, "filename"), _text(entry, "sha256")
     size = entry.get("size")
+    engine = _text(entry, "engine") or "nemo"
+    filename_pattern = _WHISPER_FILENAME if engine == "whisper" else _FILENAME
     if not (_ID.match(model_id) and name and _REPO.match(repo) and _REVISION.match(revision)
-            and _FILENAME.match(filename) and _SHA256.match(sha256)
+            and engine in _ENGINES and filename_pattern.match(filename) and _SHA256.match(sha256)
             and isinstance(size, int) and not isinstance(size, bool) and size > 0):
         return None
     return ModelInfo(
@@ -57,6 +61,7 @@ def parse_entry(entry) -> ModelInfo | None:
         version=_text(entry, "version", 40),
         notes=_text(entry, "notes", 500),
         min_app_version=_text(entry, "min_app_version", 20),
+        engine=engine,
     )
 
 
