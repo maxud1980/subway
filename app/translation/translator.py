@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import time
 import urllib.error
@@ -146,6 +147,12 @@ class Translator:
                 last_error = exc
                 if attempt == 4:
                     raise TranslationError(f"Unable to reach translation API: {exc.reason}") from exc
+                time.sleep(2 ** attempt)
+            except (TimeoutError, ConnectionError, http.client.HTTPException) as exc:
+                # The connection opened but the answer stalled or broke off mid-way.
+                last_error = exc
+                if attempt == 4:
+                    raise TranslationError(f"The translation API did not answer in time ({exc}).") from exc
                 time.sleep(2 ** attempt)
 
         raise TranslationError("API request failed after retries.") from last_error

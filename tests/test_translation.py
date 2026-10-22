@@ -45,3 +45,23 @@ def test_prompt_contains_glossary_and_context():
     assert "Petro = Петро" in prompt
     assert "before => раніше" in prompt
     assert json.loads(prompt.rsplit("Input JSON:\n", 1)[1]) == {"items": [{"id": 0, "text": "hi"}]}
+
+
+def test_stalled_answer_is_retried(monkeypatch):
+    import io
+
+    import app.translation.translator as translator
+
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(timeout)
+        if len(calls) < 3:
+            raise TimeoutError("The read operation timed out")
+        return io.BytesIO(b'{"ok": true}')
+
+    monkeypatch.setattr(translator, "urlopen", fake_urlopen)
+    monkeypatch.setattr(translator.time, "sleep", lambda seconds: None)
+    client = Translator(TranslationConfig(provider="gemini", api_key="k", model="m", target_language="uk"))
+    assert client._request_json("https://example.com", {}, {}) == {"ok": True}
+    assert len(calls) == 3
