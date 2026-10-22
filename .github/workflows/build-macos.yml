@@ -21,6 +21,7 @@ jobs:
     env:
       NEMO_VERSION: "0.1.0"
       NEMO_PLATFORM: macos-aarch64
+      WHISPER_VERSION: "1.9.5"
       RUNTIMES: "metal:nemo-speech-metal cpu:nemo-speech-cpu"
       FFMPEG_WHEEL: macosx_11_0_arm64
       APP: dist/Subway.app
@@ -76,6 +77,23 @@ jobs:
             "$RUNTIME/$folder/bin/nemo-speech" doctor
           done
 
+      - name: Add whisper.cpp runtime
+        run: |
+          # Built from source: whisper.cpp publishes no macOS command-line build.
+          # Static, with the Metal shaders embedded, so the binary needs nothing beside it.
+          curl -fsSL -o whisper.tar.gz "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v$WHISPER_VERSION.tar.gz"
+          tar -xzf whisper.tar.gz
+          cmake -S "whisper.cpp-$WHISPER_VERSION" -B whisper-build -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DGGML_NATIVE=OFF \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF
+          cmake --build whisper-build --config Release -j 4 --target whisper-cli
+          BIN="$APP/Contents/Resources/runtime/whisper-metal/bin"
+          mkdir -p "$BIN"
+          cp whisper-build/bin/whisper-cli "$BIN/"
+          otool -L "$BIN/whisper-cli"
+          "$BIN/whisper-cli" --help 2>&1 | grep -q -- "--vad" || { echo "whisper-cli has no VAD support"; exit 1; }
+          rm -rf whisper.tar.gz "whisper.cpp-$WHISPER_VERSION" whisper-build
+
       - name: Add FFmpeg
         run: |
           # Static FFmpeg build (with libass and x264) taken from the imageio-ffmpeg wheel.
@@ -103,6 +121,14 @@ jobs:
 
       - name: Check the packaged runtime
         run: python .github/scripts/smoke_runtime.py "$APP/Contents/Resources/runtime" burned-frame.png
+
+      - name: Check Whisper recognition
+        run: |
+          # A spoken sentence through the packaged whisper.cpp with the small "tiny" model.
+          curl -fsSL -o ggml-tiny.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+          say -o speech.aiff "Subway makes subtitles for every video on your computer."
+          python .github/scripts/smoke_whisper.py "$APP/Contents/Resources/runtime" ggml-tiny.en.bin speech.aiff subtitles
+          rm ggml-tiny.en.bin
 
       - name: Launch the app
         run: |

@@ -67,6 +67,57 @@ jobs:
             Remove-Item $zip -Force
           }
 
+      - name: Install Vulkan SDK
+        shell: powershell
+        run: |
+          # Needed to compile whisper.cpp's Vulkan shaders. Users only need a GPU driver.
+          $version = "1.4.309.0"
+          curl.exe -fsSL -o "$env:RUNNER_TEMP\vulkan-sdk.exe" "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe"
+          & "$env:RUNNER_TEMP\vulkan-sdk.exe" --accept-licenses --default-answer --confirm-command install | Out-Null
+          if (-not (Test-Path "C:\VulkanSDK\$version\Bin\glslc.exe")) { throw "Vulkan SDK was not installed" }
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$version"
+          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$version\Bin"
+          # ggml's Vulkan backend also wants SPIRV-Headers as a CMake package, which the
+          # SDK installer does not provide. The headers come from the matching SDK tag.
+          git clone --depth 1 --branch "vulkan-sdk-$version" https://github.com/KhronosGroup/SPIRV-Headers.git spirv-headers
+          cmake -S spirv-headers -B spirv-headers\build "-DCMAKE_INSTALL_PREFIX=$env:RUNNER_TEMP\spirv-headers" -DSPIRV_HEADERS_ENABLE_TESTS=OFF
+          if ($LASTEXITCODE) { throw "SPIRV-Headers configure failed" }
+          cmake --install spirv-headers\build
+          if ($LASTEXITCODE) { throw "SPIRV-Headers install failed" }
+          Remove-Item spirv-headers -Recurse -Force
+          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$env:RUNNER_TEMP\spirv-headers"
+
+      - name: Build whisper.cpp runtimes
+        shell: powershell
+        run: |
+          # whisper.cpp publishes no Windows command-line builds, so build two: Vulkan for
+          # any graphics card (NVIDIA, AMD, Intel) and a CPU fallback. Static, with the
+          # C runtime linked in and no OpenMP, so whisper-cli.exe needs no DLLs beside it.
+          $version = "1.9.5"
+          Invoke-WebRequest -Uri "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v$version.zip" -OutFile whisper.zip
+          Expand-Archive whisper.zip -DestinationPath . -Force
+          $src = "whisper.cpp-$version"
+          $variants = @{ "vulkan" = "ON"; "cpu" = "OFF" }
+          foreach ($variant in $variants.Keys) {
+            $build = "whisper-build-$variant"
+            cmake -S $src -B $build -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_OPENMP=OFF `
+              -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF `
+              "-DGGML_VULKAN=$($variants[$variant])"
+            if ($LASTEXITCODE) { throw "whisper.cpp $variant configure failed" }
+            cmake --build $build --config Release -j 4 --target whisper-cli
+            if ($LASTEXITCODE) { throw "whisper.cpp $variant build failed" }
+            $exe = Get-ChildItem $build -Recurse -Filter whisper-cli.exe | Select-Object -First 1
+            if (-not $exe) { throw "whisper-cli.exe was not built for $variant" }
+            $target = "package\runtime\whisper-$variant\bin"
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            Copy-Item $exe.FullName $target
+            Remove-Item $build -Recurse -Force
+          }
+          $help = cmd /c "package\runtime\whisper-cpu\bin\whisper-cli.exe --help 2>&1" | Out-String
+          if ($help -notmatch "--vad") { throw "whisper-cli has no VAD support" }
+          Remove-Item $src -Recurse -Force
+          Remove-Item whisper.zip -Force
+
       - name: Assemble distribution
         shell: powershell
         run: |
@@ -96,6 +147,20 @@ jobs:
           }
 
           Compress-Archive -Path package\* -DestinationPath Subway-Windows.zip -Force
+
+      - name: Check Whisper recognition
+        # Informational: a spoken sentence through the packaged whisper.cpp builds.
+        continue-on-error: true
+        shell: powershell
+        run: |
+          curl.exe -fsSL -o ggml-tiny.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+          Add-Type -AssemblyName System.Speech
+          $voice = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $voice.SetOutputToWaveFile("$PWD\speech.wav")
+          $voice.Speak("Subway makes subtitles for every video on your computer.")
+          $voice.Dispose()
+          python .github/scripts/smoke_whisper.py package\runtime ggml-tiny.en.bin speech.wav subtitles
+          if ($LASTEXITCODE) { throw "Whisper check failed" }
 
       - name: Upload Windows distribution
         uses: actions/upload-artifact@v4

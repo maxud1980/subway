@@ -1,4 +1,4 @@
-# Subway v0.2.0
+# Subway v0.3.0
 
 **Subway is a local subtitle generator for Windows and macOS (Apple Silicon).** Create subtitles from video and audio files without uploading your media to a server.
 
@@ -6,11 +6,12 @@
 
 ## Features
 
-- **Local speech recognition** with NVIDIA's NeMo-Speech.cpp runtime:
+- **Local speech recognition** with NVIDIA's NeMo-Speech.cpp runtime and whisper.cpp:
   - **Parakeet TDT v3** — 25 European languages, including Ukrainian and Russian.
   - **Nemotron 3.5 ASR** — 40 languages with automatic language detection.
+  - **Whisper large-v3-turbo** (OpenAI, through whisper.cpp) — 99 languages, including Arabic, Persian, Hebrew and Turkish. Speech is first found with Silero voice activity detection, so music and silence do not turn into invented text.
 - **Language check before recognition.** Choose the spoken language and Subway tells you whether the selected model knows it, offers a model that does, and refuses to start rather than produce meaningless subtitles.
-- **Model updates without reinstalling.** At startup Subway reads the model list in [`models.json`](models.json) and offers to download newer versions of Parakeet and Nemotron (pinned revision, checked by SHA-256). The previous version keeps working until the new one is downloaded.
+- **Model updates without reinstalling.** At startup Subway reads the model list in [`models.json`](models.json) and offers to download newer versions of the models (pinned revision, checked by SHA-256). The previous version keeps working until the new one is downloaded.
 - **Runs on any computer.** Subway picks the best device automatically: an NVIDIA card (CUDA) or another graphics card (Vulkan) on Windows, Apple graphics (Metal) on Apple Silicon Macs, or the processor.
 - **A queue of files.** Drag and drop several videos, press Start and come back when they are done. Files added while the queue runs are processed too.
 - **Readable subtitles.** Lines are cut at sentences, clauses and pauses using word timings, with limits for line length, number of lines, time on screen and reading speed.
@@ -38,7 +39,7 @@ Existing files are never overwritten unless you allow it in Settings: Subway cre
 4. Download a recognition model from within the application (about 700 MB, verified by checksum, resumable).
 5. Optionally enter a Gemini API key in Settings to translate subtitles.
 
-The Windows package includes the application, three builds of the NeMo-Speech runtime (CUDA, Vulkan, CPU) and FFmpeg. Speech models are downloaded separately.
+The Windows package includes the application, three builds of the NeMo-Speech runtime (CUDA, Vulkan, CPU), two builds of whisper.cpp (Vulkan, CPU) and FFmpeg. Speech models are downloaded separately.
 
 ### macOS (Apple Silicon)
 
@@ -54,7 +55,7 @@ Requires macOS 11 or newer on an Apple Silicon Mac (M1 and later); recognition r
 ```bash
 pip install -r requirements.txt pytest
 python -m pytest -q
-python subway.py   # expects runtime/ with nemo-speech*/bin and ffmpeg
+python subway.py   # expects runtime/ with nemo-speech*/bin, whisper-*/bin and ffmpeg
 ```
 
 ### Publishing a new model version

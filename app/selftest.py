@@ -16,8 +16,8 @@ from app import net
 from app.media import find_ffmpeg
 from app.paths import config_dir, runtime_dir, user_models_dir
 from app.process import run
-from app.transcription.engine import RuntimeSelector
-from app.transcription.models import MODELS
+from app.transcription.engine import RuntimeSelector, WhisperEngine
+from app.transcription.models import MODELS, ModelManager
 
 
 _report: list[str] = []
@@ -100,6 +100,16 @@ def _runtimes() -> str:
     return f"{', '.join(found)} → {selector.select('auto').label}"
 
 
+def _whisper() -> str:
+    builds = WhisperEngine(runtime_dir(), ModelManager()).installed()
+    if not builds:
+        raise RuntimeError(f"no whisper.cpp build in {runtime_dir()}")
+    working = [variant for variant, binary in builds if "--vad" in run([binary, "--help"], timeout=60)[1]]
+    if not working:
+        raise RuntimeError("whisper.cpp does not start")
+    return ", ".join(working)
+
+
 def _ffmpeg() -> str:
     code, output = run([find_ffmpeg(runtime_dir()), "-hide_banner", "-version"], timeout=60)
     if code != 0:
@@ -124,6 +134,7 @@ def main(log_path: str | None = None) -> int:
         _check("model download", _model_download),
         _check("bundled certificates", _bundled_certificates),
         _check("speech runtime", _runtimes),
+        _check("whisper runtime", _whisper),
         _check("ffmpeg", _ffmpeg),
         _check("user folders", _folders),
     ]
