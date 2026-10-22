@@ -77,6 +77,15 @@ jobs:
           if (-not (Test-Path "C:\VulkanSDK\$version\Bin\glslc.exe")) { throw "Vulkan SDK was not installed" }
           Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$version"
           Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$version\Bin"
+          # ggml's Vulkan backend also wants SPIRV-Headers as a CMake package, which the
+          # SDK installer does not provide. The headers come from the matching SDK tag.
+          git clone --depth 1 --branch "vulkan-sdk-$version" https://github.com/KhronosGroup/SPIRV-Headers.git spirv-headers
+          cmake -S spirv-headers -B spirv-headers\build "-DCMAKE_INSTALL_PREFIX=$env:RUNNER_TEMP\spirv-headers" -DSPIRV_HEADERS_ENABLE_TESTS=OFF
+          if ($LASTEXITCODE) { throw "SPIRV-Headers configure failed" }
+          cmake --install spirv-headers\build
+          if ($LASTEXITCODE) { throw "SPIRV-Headers install failed" }
+          Remove-Item spirv-headers -Recurse -Force
+          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$env:RUNNER_TEMP\spirv-headers"
 
       - name: Build whisper.cpp runtimes
         shell: powershell
