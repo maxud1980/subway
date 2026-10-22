@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from app.languages import base_language
 from app.process import CancelToken, run
 from app.subtitles.srt import read_srt
 from app.subtitles.types import Word
@@ -190,8 +191,8 @@ def language_argument(model: ModelInfo, language: str) -> str | None:
         return "auto"
     if language in model.language_codes:
         return language
-    prefix = language.split("-")[0].lower()
-    return next((code for code in model.language_codes if code.lower().startswith(prefix + "-")), "auto")
+    base = base_language(language)
+    return next((code for code in model.language_codes if base_language(code) == base), "auto")
 
 
 class NemoSpeechEngine:

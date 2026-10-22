@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "models": [
+    {
+      "id": "parakeet-tdt-v3",
+      "name": "Parakeet TDT v3 — 0.6B",
+      "repo": "nvidia/parakeet-tdt-0.6b-v3",
+      "revision": "541d1f99c6b0c3cd0b11a95167540bb8edefd82b",
+      "filename": "parakeet-tdt-0.6b-v3.q8_0.gguf",
+      "size": 713975456,
+      "sha256": "e3880d0aaaaf2c308ea2c35016b2b895c423eb3fda924c1b463d1c19b7f4d32e",
+      "languages": "25 European languages, including Ukrainian and Russian",
+      "recognizes": ["bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro", "sk", "sl", "es", "sv", "ru", "uk"],
+      "min_app_version": "0.2.0"
+    },
+    {
+      "id": "nemotron-3.5-asr",
+      "name": "Nemotron 3.5 ASR — 0.6B",
+      "repo": "nvidia/nemotron-3.5-asr-streaming-0.6b",
+      "revision": "1c8deaecc64b91f034d73e08dd8b64625eb3395d",
+      "filename": "nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
+      "size": 741548352,
+      "sha256": "a5c435f294eea8f88ce68dd27b8c3bfea7f777cb2fbba04fcd30eaa555f429ae",
+      "languages": "40 languages incl. Ukrainian, Russian, English, Arabic, Hindi, Japanese, Chinese",
+      "language_codes": ["en-US", "en-GB", "es-US", "es-ES", "fr-FR", "fr-CA", "it-IT", "pt-BR", "pt-PT", "nl-NL", "de-DE", "tr-TR", "ru-RU", "ar-AR", "hi-IN", "ja-JP", "ko-KR", "vi-VN", "uk-UA", "pl-PL", "sv-SE", "cs-CZ", "nb-NO", "da-DK", "bg-BG", "fi-FI", "hr-HR", "sk-SK", "zh-CN", "hu-HU", "ro-RO", "et-EE"],
+      "min_app_version": "0.2.0"
+    }
+  ]
+}

@@ -3,10 +3,11 @@ from __future__ import annotations
 import hashlib
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
+from app.languages import base_language
 from app.net import urlopen
 from app.paths import models_live_in_app_folder, runtime_dir, user_models_dir
 from app.process import CancelToken, Cancelled
@@ -23,6 +24,11 @@ class ModelInfo:
     sha256: str
     languages: str
     language_codes: tuple[str, ...] = ()  # Codes accepted by --language; empty = no choice.
+    recognizes: tuple[str, ...] = ()  # Languages the model knows; empty = those of language_codes.
+    version: str = ""  # Shown to the user, e.g. "2025-08".
+    notes: str = ""  # What changed in this version.
+    min_app_version: str = ""  # Older Subway builds cannot run it (new runtime needed).
+    store_as: str = ""  # Local file name when it differs from `filename`.
 
     @property
     def url(self) -> str:
@@ -33,8 +39,20 @@ class ModelInfo:
         return round(self.size / 1024 / 1024)
 
     @property
+    def local_filename(self) -> str:
+        return self.store_as or self.filename
+
+    @property
     def supports_language(self) -> bool:
+        """True when the spoken language can be passed to the model."""
         return bool(self.language_codes)
+
+    @property
+    def recognized_languages(self) -> frozenset[str]:
+        return frozenset(base_language(code) for code in (self.recognizes or self.language_codes))
+
+    def recognizes_language(self, code: str) -> bool:
+        return base_language(code) in self.recognized_languages
 
 
 # Pinned to the same revisions and checksums as NeMo-Speech.cpp's model index.
@@ -48,6 +66,10 @@ MODELS = [
         size=713975456,
         sha256="e3880d0aaaaf2c308ea2c35016b2b895c423eb3fda924c1b463d1c19b7f4d32e",
         languages="25 European languages, including Ukrainian and Russian",
+        recognizes=(
+            "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it",
+            "lv", "lt", "mt", "pl", "pt", "ro", "sk", "sl", "es", "sv", "ru", "uk",
+        ),
     ),
     ModelInfo(
         id="nemotron-3.5-asr",
@@ -96,12 +118,63 @@ class ModelManager:
         self.fallback_dir = user_models_dir()
         if not models_live_in_app_folder():
             self.models_dir = self.fallback_dir
+        # Known versions of each model, newest first. The online catalog adds newer ones.
+        self._versions: dict[str, list[ModelInfo]] = {m.id: [m] for m in MODELS}
 
     def available_models(self) -> list[ModelInfo]:
-        return MODELS
+        return [versions[0] for versions in self._versions.values()]
+
+    def get(self, model_id: str) -> ModelInfo:
+        """The newest known version of a model."""
+        versions = self._versions.get(model_id) or next(iter(self._versions.values()))
+        return versions[0]
+
+    def installed(self, model_id: str) -> ModelInfo | None:
+        """The newest version that is on disk."""
+        return next((m for m in self._versions.get(model_id, []) if self.is_downloaded(m)), None)
+
+    def update_available(self, model_id: str) -> bool:
+        installed = self.installed(model_id)
+        return installed is not None and installed != self.get(model_id)
+
+    def add_versions(self, models: list[ModelInfo]) -> list[ModelInfo]:
+        """Add catalog entries as the newest versions; returns the ones that were new."""
+        added = []
+        for model in models:
+            versions = self._versions.setdefault(model.id, [])
+            if any(v.revision == model.revision and v.filename == model.filename for v in versions):
+                continue
+            if any(v.local_filename == model.local_filename for v in versions):
+                path = Path(model.filename)
+                model = replace(model, store_as=f"{path.stem}.{model.revision[:8]}{path.suffix}")
+            versions.insert(0, model)
+            added.append(model)
+        return added
+
+    def _older_files(self, model_id: str) -> list[Path]:
+        newest = set(self._candidates(self.get(model_id)))
+        return [path for model in self._versions.get(model_id, [])[1:] for path in self._candidates(model)
+                if path not in newest and path.is_file()]
+
+    def older_size(self, model_id: str) -> int:
+        """Bytes taken by versions older than the newest one."""
+        total = 0
+        for path in self._older_files(model_id):
+            try:
+                total += path.stat().st_size
+            except OSError:
+                pass
+        return total
+
+    def remove_older(self, model_id: str) -> None:
+        for path in self._older_files(model_id):
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
     def _candidates(self, model: ModelInfo) -> list[Path]:
-        return [self.models_dir / model.filename, self.fallback_dir / model.filename]
+        return [self.models_dir / model.local_filename, self.fallback_dir / model.local_filename]
 
     def path_for(self, model: ModelInfo) -> Path:
         for path in self._candidates(model):
@@ -128,7 +201,7 @@ class ModelManager:
         """Download with resume support and SHA-256 verification."""
         folder = self.models_dir if _writable(self.models_dir) else self.fallback_dir
         folder.mkdir(parents=True, exist_ok=True)
-        target = folder / model.filename
+        target = folder / model.local_filename
         partial = target.with_suffix(target.suffix + ".download")
 
         digest = hashlib.sha256()

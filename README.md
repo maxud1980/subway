@@ -9,6 +9,8 @@
 - **Local speech recognition** with NVIDIA's NeMo-Speech.cpp runtime:
   - **Parakeet TDT v3** — 25 European languages, including Ukrainian and Russian.
   - **Nemotron 3.5 ASR** — 40 languages with automatic language detection.
+- **Language check before recognition.** Choose the spoken language and Subway tells you whether the selected model knows it, offers a model that does, and refuses to start rather than produce meaningless subtitles.
+- **Model updates without reinstalling.** At startup Subway reads the model list in [`models.json`](models.json) and offers to download newer versions of Parakeet and Nemotron (pinned revision, checked by SHA-256). The previous version keeps working until the new one is downloaded.
 - **Runs on any computer.** Subway picks the best device automatically: an NVIDIA card (CUDA) or another graphics card (Vulkan) on Windows, Apple graphics (Metal) on Apple Silicon Macs, or the processor.
 - **A queue of files.** Drag and drop several videos, press Start and come back when they are done. Files added while the queue runs are processed too.
 - **Readable subtitles.** Lines are cut at sentences, clauses and pauses using word timings, with limits for line length, number of lines, time on screen and reading speed.
@@ -54,6 +56,10 @@ pip install -r requirements.txt pytest
 python -m pytest -q
 python subway.py   # expects runtime/ with nemo-speech*/bin and ffmpeg
 ```
+
+### Publishing a new model version
+
+A weekly workflow (`Model updates`) compares `models.json` with Hugging Face and opens an issue when NVIDIA publishes a new file, with the revision, size and checksum to copy. Update the entry in `models.json` on `main` and every installed Subway offers it at the next start. Set `min_app_version` when the model needs a newer NeMo-Speech runtime than older Subway builds carry; older builds skip that entry and keep the version they have until Subway itself is updated.
 
 ## Privacy
 
