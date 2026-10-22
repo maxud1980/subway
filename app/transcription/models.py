@@ -29,6 +29,7 @@ class ModelInfo:
     notes: str = ""  # What changed in this version.
     min_app_version: str = ""  # Older Subway builds cannot run it (new runtime needed).
     store_as: str = ""  # Local file name when it differs from `filename`.
+    engine: str = "nemo"  # Runtime that runs it: "nemo" (NeMo-Speech.cpp) or "whisper" (whisper.cpp).
 
     @property
     def url(self) -> str:
@@ -55,7 +56,31 @@ class ModelInfo:
         return base_language(code) in self.recognized_languages
 
 
-# Pinned to the same revisions and checksums as NeMo-Speech.cpp's model index.
+# Codes accepted by whisper.cpp's --language.
+WHISPER_LANGUAGES = (
+    "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it", "id",
+    "hi", "fi", "vi", "he", "uk", "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur", "hr", "bg",
+    "lt", "la", "mi", "ml", "cy", "sk", "te", "fa", "lv", "bn", "sr", "az", "sl", "kn", "et", "mk", "br",
+    "eu", "is", "hy", "ne", "mn", "bs", "kk", "sq", "sw", "gl", "mr", "pa", "si", "km", "sn", "yo", "so",
+    "af", "oc", "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", "uz", "fo", "ht", "ps", "tk", "nn", "mt",
+    "sa", "lb", "my", "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw", "su", "yue",
+)
+
+# Silero voice activity detection for whisper.cpp: Whisper invents text over music and
+# silence, so only the parts with speech are recognized. Downloaded with every Whisper model.
+WHISPER_VAD = ModelInfo(
+    id="silero-vad",
+    name="Silero VAD v6.2.0",
+    repo="ggml-org/whisper-vad",
+    revision="9ffd54a1e1ee413ddf265af9913beaf518d1639b",
+    filename="ggml-silero-v6.2.0.bin",
+    size=885098,
+    sha256="2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987",
+    languages="",
+    engine="vad",
+)
+
+# NVIDIA models are pinned to the same revisions and checksums as NeMo-Speech.cpp's model index.
 MODELS = [
     ModelInfo(
         id="parakeet-tdt-v3",
@@ -86,6 +111,18 @@ MODELS = [
             "uk-UA", "pl-PL", "sv-SE", "cs-CZ", "nb-NO", "da-DK", "bg-BG", "fi-FI", "hr-HR",
             "sk-SK", "zh-CN", "hu-HU", "ro-RO", "et-EE",
         ),
+    ),
+    ModelInfo(
+        id="whisper-large-v3-turbo",
+        name="Whisper large-v3-turbo — 0.8B",
+        repo="ggerganov/whisper.cpp",
+        revision="0b364b566045a405be7225ee1e415a073e04da77",
+        filename="ggml-large-v3-turbo-q8_0.bin",
+        size=874188075,
+        sha256="317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1",
+        languages="99 languages incl. Ukrainian, Russian, English, Arabic, Persian, Hebrew, Turkish, Chinese",
+        language_codes=WHISPER_LANGUAGES,
+        engine="whisper",
     ),
 ]
 
@@ -189,8 +226,16 @@ class ModelManager:
         except OSError:
             return False
 
-    def is_downloaded(self, model: ModelInfo) -> bool:
+    @staticmethod
+    def companions(model: ModelInfo) -> list[ModelInfo]:
+        """Files a model needs besides its own."""
+        return [WHISPER_VAD] if model.engine == "whisper" else []
+
+    def _file_downloaded(self, model: ModelInfo) -> bool:
         return any(self._complete(path, model) for path in self._candidates(model))
+
+    def is_downloaded(self, model: ModelInfo) -> bool:
+        return all(self._file_downloaded(m) for m in [model, *self.companions(model)])
 
     def download(
         self,
@@ -198,7 +243,18 @@ class ModelManager:
         progress: Callable[[int, int], None] | None = None,
         cancel: CancelToken | None = None,
     ) -> Path:
-        """Download with resume support and SHA-256 verification."""
+        """Download a model and the files it needs, with resume support and SHA-256 verification."""
+        for companion in self.companions(model):
+            if not self._file_downloaded(companion):
+                self._download_file(companion, None, cancel)
+        return self._download_file(model, progress, cancel)
+
+    def _download_file(
+        self,
+        model: ModelInfo,
+        progress: Callable[[int, int], None] | None,
+        cancel: CancelToken | None,
+    ) -> Path:
         folder = self.models_dir if _writable(self.models_dir) else self.fallback_dir
         folder.mkdir(parents=True, exist_ok=True)
         target = folder / model.local_filename
